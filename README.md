@@ -185,6 +185,30 @@ dépôt, l'écran doit être prévenu sans avoir rien demandé, aucun chemin de 
 ne doit sortir dans l'état public, et la fin de réunion doit effacer les fichiers
 **pour de vrai**.
 
+### Ce qui a été mesuré, sur le NAS
+
+Délai entre le dépôt et l'affichage à l'écran, conteneur `ecran-partage` :
+
+| Document | Délai |
+| --- | --- |
+| PDF, 1 page | ~740 ms |
+| PDF, 12 pages | ~320 ms |
+| Passage par LibreOffice (`.txt`, `.docx`, `.pptx`…), conteneur chaud | ~1,8 s |
+| Passage par LibreOffice, **tout premier document d'un conteneur neuf** | **12,4 s** |
+
+La réponse au téléphone, elle, tombe en moins de 10 ms : le serveur répond
+avant de convertir, exprès.
+
+Ces douze secondes sont le démarrage à froid de LibreOffice — et non le profil
+`-env:UserInstallation`, qu'on pourrait croire coupable : un profil neuf ne
+coûte qu'une demi-seconde (2,25 s contre 2,05 s, mesuré). C'est pourquoi le
+serveur **réveille LibreOffice au démarrage**, en arrière-plan, pour que le
+premier participant ne paye pas l'addition. Le journal le dit :
+
+```
+[conversion] LibreOffice prêt
+```
+
 ### Ce qu'aucun banc ne dira
 
 - le QR code est-il assez grand pour être scanné **à trois mètres** ?
@@ -200,8 +224,12 @@ d'attaquer la phase 2.
 ## Ce qui reste à éprouver avant d'aller plus loin
 
 1. **L'écran de la salle peut-il joindre le NAS ?** C'est le vrai risque du
-   projet (§4), et il n'est pas logiciel. À vérifier avant tout le reste.
-2. **La conversion dans le conteneur** : `docker exec ecran-partage node tests/depot.mjs`
-   doit passer sans aucun `IGNORE`.
-3. **La lisibilité à trois mètres**, sur l'écran choisi.
-4. **Le délai** entre le dépôt et l'affichage, mesuré avec un vrai `.pptx`.
+   projet (§4), et il n'est pas logiciel. Rien n'est réglé tant que ce point ne
+   l'est pas — ni le code ni la mesure n'y peuvent quoi que ce soit.
+2. **La lisibilité à trois mètres**, sur l'écran choisi : taille du QR code,
+   lisibilité du code de salle.
+3. **Un vrai `.pptx` déposé depuis un vrai téléphone**, pour confirmer les
+   mesures ci-dessus hors laboratoire.
+
+~~La conversion dans le conteneur~~ — **fait** : le banc passe ses 39 contrôles
+dans le conteneur, sans aucun `IGNORE`.

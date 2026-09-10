@@ -127,6 +127,32 @@ export async function preparer(fichier, dossier) {
   }
 }
 
+// Le TOUT PREMIER appel a LibreOffice dans un conteneur neuf coute une douzaine
+// de secondes, contre moins de deux ensuite — mesure faite sur le NAS. Ce n'est
+// pas le profil qui est en cause (un profil neuf ne coute qu'une demi-seconde),
+// c'est le chargement initial de LibreOffice lui-meme.
+//
+// Douze secondes, c'est au-dela de la barre que le cahier se fixe (§12) : on
+// croit a une panne et on renvoie le fichier. On paye donc ce demarrage au
+// lancement du conteneur, quand personne n'attend, plutot que sur le dos du
+// premier participant.
+//
+// Ne fait jamais echouer le demarrage : LibreOffice absent, c'est une reunion
+// sans .pptx, pas un service en panne.
+export async function prechaufferBureautique() {
+  const dossier = fs.mkdtempSync(path.join(os.tmpdir(), 'prechauffe-'));
+  try {
+    const source = path.join(dossier, 'prechauffe.txt');
+    fs.writeFileSync(source, 'préchauffage');
+    await versPdfBureautique(source, dossier);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, motif: String(err.message || err).split('\n')[0].slice(0, 120) };
+  } finally {
+    fs.rmSync(dossier, { recursive: true, force: true });
+  }
+}
+
 // Les outils de conversion sont dans le CONTENEUR, pas sur le poste Windows.
 // Le banc d'essai s'en sert pour savoir s'il peut esperer de vraies pages ou
 // s'il doit se contenter d'eprouver la plomberie.

@@ -13,6 +13,7 @@ import http from 'node:http';
 import { initDossiers, reglages } from './src/config.js';
 import { nouvelleReunion, effacerSiOubliee } from './src/salle.js';
 import { creerGestionnaire } from './src/api.js';
+import { prechaufferBureautique } from './src/documents.js';
 
 const port = Number(process.env.ECR_HTTP_PORT) || 8802;
 
@@ -41,6 +42,15 @@ serveur.listen(port, () => {
 serveur.on('error', (err) => {
   console.error(`[http] ${err.message}`);
   process.exit(1);
+});
+
+// LibreOffice est reveille des le demarrage, pour que le premier .docx de la
+// reunion ne soit pas le plus lent. Mesure sur le NAS : douze secondes a froid,
+// moins de deux ensuite. En arriere-plan — le service repond deja pendant ce
+// temps-la, et un PDF, lui, n'a pas besoin de LibreOffice.
+prechaufferBureautique().then((resultat) => {
+  if (resultat.ok) console.log('[conversion] LibreOffice prêt');
+  else console.log(`[conversion] LibreOffice indisponible : ${resultat.motif}`);
 });
 
 // Le filet du §9.2, verifie toutes les dix minutes. Une reunion oubliee
