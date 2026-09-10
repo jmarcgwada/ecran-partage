@@ -1,0 +1,54 @@
+# ============================================================================
+# ECRAN PARTAGE
+#
+#   http://<nas>:8802/scene         a ouvrir en plein ecran dans la salle
+#   http://<nas>:8802/salle/<code>  ou menent les QR codes
+#
+# CE SERVICE NE VA PAS SUR INTERNET (§9.3 du cahier de projet). Pas de regle de
+# proxy inverse DSM pour lui. Si l'acces a distance devient necessaire un jour :
+# tailscale serve, jamais funnel.
+# ============================================================================
+
+services:
+  ecran-partage:
+    build: .
+    image: ecran-partage:0.1.0
+    container_name: ecran-partage
+    restart: unless-stopped
+
+    # Le pont PAR DEFAUT de Docker, et non un reseau a nous : sur ce NAS, la
+    # reserve d'adresses privees de Docker est epuisee par les projets deja en
+    # place, et la creation d'un reseau supplementaire echoue avec
+    # « could not find an available, non-overlapping IPv4 address pool » — un
+    # message qui ne parle pas de saturation.
+    network_mode: bridge
+
+    ports:
+      - "8802:8802"
+
+    volumes:
+      # Les reglages, et les documents de la reunion EN COURS. Ce dossier est
+      # vide a chaque demarrage : il n'a rien a faire dans une sauvegarde.
+      - ./data:/data
+
+    environment:
+      ECR_HTTP_PORT: "8802"
+      ECR_DATA_DIR: /data
+      TZ: Europe/Paris
+
+      ECR_NOM_SALLE: "Salle de réunion"
+
+      # L'adresse par laquelle un TELEPHONE joint le service — c'est elle qu'on
+      # encode dans le QR code. Laissee vide, on encode l'adresse par laquelle
+      # l'ecran de la salle a ouvert la page, ce qui suffit tant que tout le
+      # monde est sur le meme reseau.
+      #   exemple : http://192.168.0.10:8802
+      ECR_ADRESSE_PUBLIQUE: ""
+
+      # 50 Mo par fichier : de quoi laisser passer un .pptx bourre d'images.
+      ECR_TAILLE_MAX_MO: "50"
+      ECR_FICHIERS_MAX: "10"
+
+      # Le filet du §9.2 : une reunion que personne n'a terminee s'efface
+      # d'elle-meme apres ce nombre d'heures SANS ACTIVITE.
+      ECR_EFFACEMENT_HEURES: "4"

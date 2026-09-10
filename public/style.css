@@ -1,0 +1,170 @@
+/* ============================================================================
+   LES PAGES DE TELEPHONE
+   Sobres, lisibles d'une main, et sombres par defaut : on les consulte dans
+   une salle dont on vient d'eteindre la lumiere pour voir l'ecran.
+   ============================================================================ */
+
+:root {
+  --fond: #0b0d10;
+  --carte: #141920;
+  --encre: #f2f4f7;
+  --discret: #8a93a0;
+  --trait: #232a34;
+  --accent: #4da3ff;
+  --rouge: #ff6b6b;
+  --vert: #4ade80;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0 0 3rem;
+  background: var(--fond);
+  color: var(--encre);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 17px;
+  line-height: 1.5;
+  /* Les encoches des telephones recents. */
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+header {
+  padding: 1.2rem 1.2rem 0.8rem;
+  border-bottom: 1px solid var(--trait);
+}
+header h1 { margin: 0; font-size: 1.15rem; font-weight: 600; }
+header .code {
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  font-variant-numeric: tabular-nums;
+}
+header p { margin: 0.3rem 0 0; color: var(--discret); font-size: 0.9rem; }
+
+main { padding: 1.2rem; max-width: 34rem; margin: 0 auto; }
+
+section { margin-bottom: 1.6rem; }
+h2 {
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--discret);
+  margin: 0 0 0.7rem;
+  font-weight: 600;
+}
+
+label { display: block; margin-bottom: 0.4rem; color: var(--discret); font-size: 0.9rem; }
+
+input[type="text"] {
+  width: 100%;
+  padding: 0.85rem 0.9rem;
+  background: var(--carte);
+  border: 1px solid var(--trait);
+  border-radius: 0.7rem;
+  color: var(--encre);
+  /* 16 px au moins : en dessous, iOS zoome tout seul a la mise au point et la
+     page se retrouve de travers. */
+  font-size: 16px;
+  font-family: inherit;
+}
+input[type="text"]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Le vrai champ de fichier est cache : son apparence n'est pas maitrisable
+   d'un telephone a l'autre. Le bouton, lui, l'est. */
+input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+
+.bouton {
+  display: block;
+  width: 100%;
+  padding: 1rem;
+  border: none;
+  border-radius: 0.7rem;
+  background: var(--accent);
+  color: #04121f;
+  font-size: 1.02rem;
+  font-weight: 600;
+  font-family: inherit;
+  text-align: center;
+  cursor: pointer;
+  -webkit-appearance: none;
+}
+a.bouton { text-decoration: none; }
+.bouton:disabled { opacity: 0.45; }
+.bouton.secondaire {
+  background: var(--carte);
+  color: var(--encre);
+  border: 1px solid var(--trait);
+}
+.bouton + .bouton { margin-top: 0.7rem; }
+
+#choisis {
+  margin: 0.7rem 0 0;
+  color: var(--discret);
+  font-size: 0.9rem;
+  word-break: break-word;
+}
+
+/* La barre d'avancement : un .pptx de 40 Mo sur un Wi-Fi de salle, c'est
+   long, et sans repere on croit que rien ne part. */
+#avancement {
+  display: none;
+  margin-top: 0.9rem;
+  height: 0.5rem;
+  background: var(--trait);
+  border-radius: 999px;
+  overflow: hidden;
+}
+#avancement.visible { display: block; }
+#avancement > div {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.2s;
+}
+
+#message {
+  margin-top: 0.9rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 0.7rem;
+  font-size: 0.95rem;
+  display: none;
+}
+#message.visible { display: block; }
+#message.erreur { background: rgba(255,107,107,0.14); color: var(--rouge); }
+#message.bien { background: rgba(74,222,128,0.12); color: var(--vert); }
+
+ul.documents { list-style: none; margin: 0; padding: 0; }
+ul.documents li {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.8rem 0.9rem;
+  background: var(--carte);
+  border: 1px solid var(--trait);
+  border-radius: 0.7rem;
+  margin-bottom: 0.5rem;
+}
+ul.documents .titre { flex: 1; min-width: 0; }
+ul.documents .nom {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+ul.documents .qui { color: var(--discret); font-size: 0.85rem; }
+ul.documents .etat { font-size: 0.8rem; color: var(--discret); flex: none; }
+ul.documents .etat.erreur { color: var(--rouge); }
+ul.documents li.affiche { border-color: var(--accent); }
+ul.documents li.affiche .etat { color: var(--accent); }
+
+.vide { color: var(--discret); font-size: 0.95rem; }
+
+footer {
+  padding: 0 1.2rem;
+  max-width: 34rem;
+  margin: 0 auto;
+  color: var(--discret);
+  font-size: 0.82rem;
+}

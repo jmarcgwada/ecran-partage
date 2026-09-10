@@ -1,0 +1,16 @@
+{
+  "name": "ecran-partage",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Chacun envoie un document sur l'ecran de la salle de reunion depuis son telephone.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node tests/depot.mjs",
+    "test:depot": "node tests/depot.mjs"
+  }
+}

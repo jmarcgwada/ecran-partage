@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Écran Partagé</title>
+
+<!--
+  ============================================================================
+  L'ECRAN DE LA SALLE
+
+  Cette page est AUTONOME : son style et son code sont ici, dans un seul
+  fichier. Ce n'est pas de la coquetterie — cet ecran est ouvert une fois pour
+  toutes, souvent sur un boitier qu'on ne touche plus ensuite. Une requete, un
+  fichier : c'est autant d'occasions en moins de rester sur une version
+  perimee ou de tomber sur un fichier manquant.
+
+  Le code y est volontairement demode (pas de ?., pas de ??, pas de spread
+  d'objet) : la meme page doit tourner dans la WebView d'un boitier Android
+  qui a quelques annees, et une erreur de syntaxe y serait muette — ecran noir,
+  aucun message, personne pour ouvrir une console.
+  ============================================================================
+-->
+
+<style>
+  :root {
+    --fond: #0b0d10;
+    --encre: #f2f4f7;
+    --discret: #8a93a0;
+    --trait: #1e232b;
+    --accent: #4da3ff;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--fond);
+    color: var(--encre);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+    /* L'ecran d'une salle ne se touche pas : pas de curseur qui traine. */
+    cursor: none;
+  }
+
+  /* --- L'accueil : le QR code, et rien qui distraie --------------------- */
+
+  #accueil {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3vh;
+    padding: 4vh;
+    text-align: center;
+  }
+
+  #nom-salle {
+    font-size: 3.2vh;
+    font-weight: 600;
+    color: var(--discret);
+    letter-spacing: 0.04em;
+  }
+
+  /* Un QR code se scanne a trois metres : il occupe la moitie de la hauteur.
+     Fond blanc obligatoire — un QR clair sur fond sombre n'est pas lu par la
+     moitie des telephones. */
+  #qr-cadre {
+    background: #fff;
+    padding: 2vh;
+    border-radius: 1.5vh;
+    line-height: 0;
+  }
+  #qr { width: 44vh; height: 44vh; display: block; }
+  #qr-secours {
+    display: none;
+    font-size: 2.4vh;
+    color: #111;
+    max-width: 44vh;
+    word-break: break-all;
+    line-height: 1.4;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+  }
+
+  #consigne { font-size: 3.4vh; font-weight: 500; }
+
+  #code-grand {
+    font-size: 9vh;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    /* Compense le chasse a droite de l'interlettrage, sinon le nombre parait
+       decale vers la gauche. */
+    text-indent: 0.18em;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+  #code-libelle { font-size: 2.4vh; color: var(--discret); margin-top: -2vh; }
+
+  /* --- Le document affiche ---------------------------------------------- */
+
+  #vue { display: none; height: 100%; position: relative; }
+
+  #page {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    /* Les vieilles WebView ignorent object-fit : le repli garde au moins
+       l'image entiere dans le cadre. */
+    max-width: 100%;
+    max-height: 100%;
+    display: block;
+    background: var(--fond);
+  }
+
+  /* L'incrustation du bas : le code de salle reste visible en permanence
+     (§4), sinon un retardataire ne peut plus rejoindre la reunion. */
+  #barre {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    display: flex;
+    align-items: center;
+    gap: 2.4vh;
+    padding: 1.4vh 2.4vh;
+    background: linear-gradient(to top, rgba(11,13,16,0.92), rgba(11,13,16,0));
+    font-size: 2.2vh;
+  }
+  #barre-qr {
+    width: 8vh; height: 8vh;
+    background: #fff;
+    padding: 0.5vh;
+    border-radius: 0.6vh;
+    flex: none;
+  }
+  #barre-titre {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--encre);
+  }
+  #barre-titre b { font-weight: 600; }
+  #barre-titre span { color: var(--discret); }
+  #barre-code {
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+    flex: none;
+  }
+  #barre-page { color: var(--discret); flex: none; font-variant-numeric: tabular-nums; }
+
+  /* --- Les deux avis ----------------------------------------------------- */
+
+  /* « Réception d'un document… » : sans lui, on croit a une panne pendant que
+     LibreOffice travaille, et on renvoie le fichier (§12). */
+  #reception {
+    display: none;
+    position: absolute;
+    top: 2.4vh; right: 2.4vh;
+    padding: 1.2vh 2vh;
+    background: rgba(77,163,255,0.16);
+    border: 1px solid rgba(77,163,255,0.4);
+    border-radius: 1vh;
+    font-size: 2.4vh;
+    color: var(--accent);
+  }
+  #reception.visible { display: block; }
+
+  #lien {
+    display: none;
+    position: absolute;
+    top: 2.4vh; left: 2.4vh;
+    padding: 1.2vh 2vh;
+    background: rgba(255,170,60,0.16);
+    border: 1px solid rgba(255,170,60,0.45);
+    border-radius: 1vh;
+    font-size: 2.2vh;
+    color: #ffaa3c;
+  }
+  #lien.visible { display: block; }
+
+  .points:after {
+    content: '';
+    animation: points 1.4s steps(4, end) infinite;
+  }
+  @keyframes points {
+    0%   { content: ''; }
+    25%  { content: '.'; }
+    50%  { content: '..'; }
+    75%  { content: '...'; }
+  }
+</style>
+</head>
+<body>
+
+<div id="accueil">
+  <div id="nom-salle">&nbsp;</div>
+  <div id="qr-cadre">
+    <img id="qr" alt="QR code de la salle">
+    <div id="qr-secours"></div>
+  </div>
+  <div id="consigne">Scannez pour envoyer un document</div>
+  <div>
+    <div id="code-grand">····</div>
+    <div id="code-libelle">code de la salle</div>
+  </div>
+</div>
+
+<div id="vue">
+  <img id="page" alt="">
+  <div id="barre">
+    <img id="barre-qr" alt="">
+    <div id="barre-titre"></div>
+    <div id="barre-page"></div>
+    <div id="barre-code"></div>
+  </div>
+</div>
+
+<div id="reception"><span class="points">Réception d’un document</span></div>
+<div id="lien">Lien avec le serveur interrompu<span class="points"></span></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var accueil = document.getElementById('accueil');
+  var vue = document.getElementById('vue');
+  var page = document.getElementById('page');
+  var qr = document.getElementById('qr');
+  var qrSecours = document.getElementById('qr-secours');
+  var barreQr = document.getElementById('barre-qr');
+  var avisReception = document.getElementById('reception');
+  var avisLien = document.getElementById('lien');
+
+  var codeAffiche = null;
+  var imageAffichee = null;
+
+  // --- Le QR code ----------------------------------------------------------
+  // Recharge uniquement quand le code change : sans cette garde, chaque
+  // battement du flux ferait clignoter le QR code de l'ecran.
+
+  function poserQr(code) {
+    if (code === codeAffiche) return;
+    codeAffiche = code;
+    var source = '/api/qr.svg?c=' + encodeURIComponent(code);
+    qr.style.display = '';
+    qrSecours.style.display = 'none';
+    qr.src = source;
+    barreQr.src = source;
+    // L'adresse du repli ne voyage PAS dans le flux : elle depend du reglage
+    // d'adresse publique, que seul le serveur connait. On la redemande a
+    // chaque changement de code — c'est-a-dire une fois par reunion.
+    demanderAdresse();
+  }
+
+  function demanderAdresse() {
+    var requete = new XMLHttpRequest();
+    requete.open('GET', '/api/etat');
+    requete.onload = function () {
+      try {
+        var etat = JSON.parse(requete.responseText);
+        // Uniquement le texte de repli : appeler appliquer() ici rappellerait
+        // poserQr, donc demanderAdresse, sans fin.
+        if (etat.adresse) qrSecours.textContent = etat.adresse;
+      } catch (err) { /* le carre blanc restera vide, tant pis */ }
+    };
+    requete.send();
+  }
+
+  // qrencode absent ou en panne : on montre l'adresse en toutes lettres. Une
+  // reunion se tient tres bien en tapant une adresse, pas avec un carre vide.
+  qr.onerror = function () {
+    qr.style.display = 'none';
+    qrSecours.style.display = 'block';
+  };
+
+  // --- L'affichage ---------------------------------------------------------
+
+  function appliquer(etat) {
+    document.getElementById('nom-salle').textContent = etat.nomSalle || '';
+    document.getElementById('code-grand').textContent = etat.code;
+    document.getElementById('barre-code').textContent = etat.code;
+    poserQr(etat.code);
+
+    if (etat.reception) avisReception.className = 'visible';
+    else avisReception.className = '';
+
+    var a = etat.affichage;
+    if (a && a.image) {
+      // Ne reassigner src que si l'image change vraiment : sinon l'ecran
+      // clignote a chaque evenement recu.
+      if (a.image !== imageAffichee) {
+        imageAffichee = a.image;
+        page.src = a.image;
+      }
+      var titre = '<b>' + echapper(a.nom || '') + '</b>';
+      if (a.prenom) titre += ' <span>— ' + echapper(a.prenom) + '</span>';
+      document.getElementById('barre-titre').innerHTML = titre;
+      document.getElementById('barre-page').textContent =
+        a.nbPages > 1 ? (a.page + 1) + ' / ' + a.nbPages : '';
+      accueil.style.display = 'none';
+      vue.style.display = 'block';
+    } else {
+      imageAffichee = null;
+      page.removeAttribute('src');
+      accueil.style.display = 'flex';
+      vue.style.display = 'none';
+    }
+  }
+
+  function echapper(texte) {
+    return String(texte)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // --- Le flux -------------------------------------------------------------
+  // EventSource se reconnecte tout seul. On ne s'occupe donc que d'afficher
+  // l'avertissement, et de le retirer quand le lien revient — le premier
+  // evenement recu porte l'etat entier, il n'y a rien a rattraper.
+
+  var flux = null;
+  function brancher() {
+    if (flux) flux.close();
+    flux = new EventSource('/api/flux');
+
+    flux.addEventListener('etat', function (evenement) {
+      avisLien.className = '';
+      try {
+        appliquer(JSON.parse(evenement.data));
+      } catch (err) {
+        // Un evenement abime ne doit pas figer l'ecran pour la suite.
+      }
+    });
+
+    flux.onerror = function () {
+      avisLien.className = 'visible';
+    };
+  }
+
+  // Pas d'appel a /api/etat au demarrage : le flux envoie l'etat entier des
+  // qu'il s'ouvre. Une requete de moins, et surtout pas de course entre deux
+  // sources qui diraient la meme chose.
+
+  // --- La mise en veille ---------------------------------------------------
+  // Un ecran qui s'eteint au milieu d'une reunion passe pour une panne. Le
+  // verrou n'existe pas partout (il faut du HTTPS et un navigateur recent) et
+  // ne dispense JAMAIS du reglage systeme de la salle : c'est un secours, pas
+  // une garantie.
+
+  function retenirLEcran() {
+    if (!navigator.wakeLock) return;
+    navigator.wakeLock.request('screen').catch(function () { /* tant pis */ });
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) retenirLEcran();
+  });
+
+  brancher();
+  retenirLEcran();
+}());
+</script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b0d10">
+<title>Écran Partagé</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header>
+  <h1>Écran Partagé</h1>
+  <p>Chacun envoie un document sur l’écran de la salle, depuis son téléphone.</p>
+</header>
+
+<main>
+  <!-- Cette page n'est pas celle des participants : eux arrivent par le QR
+       code, sur /salle/<code>. Elle sert a celui qui installe l'ecran. -->
+  <section>
+    <h2>Pour l’écran de la salle</h2>
+    <p class="vide">
+      Ouvrez cette page en plein écran sur l’écran de la salle, une fois pour
+      toutes. Elle affiche le QR code et le code de salle.
+    </p>
+    <a class="bouton" href="/scene">Ouvrir l’écran de la salle</a>
+  </section>
+
+  <section>
+    <h2>Pour les participants</h2>
+    <p class="vide">
+      Rien à faire ici : scannez le QR code affiché sur l’écran de la salle.
+      Sans le code de salle, on ne dépose rien.
+    </p>
+  </section>
+</main>
+
+<footer>
+  Les documents ne sont conservés que le temps de la réunion.
+</footer>
+
+</body>
+</html>

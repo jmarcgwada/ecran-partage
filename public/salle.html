@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d10">
+<title>Envoyer un document</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header>
+  <h1>Écran de la salle <span class="code" id="code">····</span></h1>
+  <p id="nom-salle">&nbsp;</p>
+</header>
+
+<main>
+  <section>
+    <h2>Votre document</h2>
+    <label for="prenom">Votre prénom (facultatif)</label>
+    <input type="text" id="prenom" autocomplete="given-name" placeholder="Camille" maxlength="40">
+
+    <!-- Pas de <form> : un formulaire HTML invalide n'emet pas l'evenement
+         submit, et le bouton ne fait alors rien, sans un mot. On verifie
+         nous-memes, pour pouvoir nommer ce qui manque. -->
+    <input type="file" id="fichiers" multiple>
+    <p id="choisis">Aucun fichier choisi</p>
+    <button type="button" class="bouton secondaire" id="choisir">Choisir un fichier</button>
+    <button type="button" class="bouton" id="envoyer" disabled>Envoyer sur l’écran</button>
+
+    <div id="avancement"><div></div></div>
+    <div id="message"></div>
+  </section>
+
+  <section>
+    <h2>Documents de la réunion</h2>
+    <ul class="documents" id="liste"></ul>
+    <p class="vide" id="liste-vide">Rien n’a encore été envoyé.</p>
+  </section>
+</main>
+
+<footer id="pied"></footer>
+
+<script src="/salle.js"></script>
+</body>
+</html>
