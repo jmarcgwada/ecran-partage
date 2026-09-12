@@ -164,9 +164,16 @@
 
   function appliquer(etat) {
     dernierEtat = etat;
-    document.getElementById('code').textContent = etat.code;
     document.getElementById('nom-salle').textContent = etat.nomSalle || '';
-    if (pupitre.hidden) return;
+
+    // Tant qu'on n'est pas entré, la page ne montre PAS le code : l'afficher en
+    // en-tête le donnerait à qui ouvre l'adresse par curiosité, ce qui rendrait
+    // la saisie ci-dessous parfaitement décorative.
+    if (pupitre.hidden) {
+      document.getElementById('code').textContent = '····';
+      return;
+    }
+    document.getElementById('code').textContent = etat.code;
 
     regime.textContent = etat.laMainEstLibre
       ? 'La main est libre : chacun peut afficher un document et tourner les pages.'
