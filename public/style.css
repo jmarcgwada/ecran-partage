@@ -17,6 +17,12 @@
 
 * { box-sizing: border-box; }
 
+/* L'attribut « hidden » doit l'emporter. Sans cette regle, une regle a nous
+   comme « .bouton { display: block } » ecrase le display:none que le navigateur
+   accorde a hidden — et l'element reste visible alors que le code le croit
+   cache. Panne muette, et trompeuse : le journal ne dit rien, seul l'oeil voit. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   padding: 0 0 3rem;
