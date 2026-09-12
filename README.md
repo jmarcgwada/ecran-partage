@@ -21,9 +21,9 @@ réunion : un participant dépose, le document apparaît.
 | Phase | État |
 | --- | --- |
 | 1 — l'écran affiche quelque chose | **fait** |
-| 2 — le tour de parole | **fait**, sauf la page `/animateur` et son réglage |
-| 3 — la fin de réunion (bouton « Terminer ») | *partiellement* — voir ci-dessous |
-| 4 — le confort (vidéos, mode sombre, télécommande) | à faire |
+| 2 — le tour de parole | **fait** |
+| 3 — la fin de réunion (bouton « Terminer ») | **fait** |
+| 4 — le confort (vidéos, mode sombre, télécommande clavier) | à faire |
 
 ### Ce que la phase 1 fait
 
@@ -48,12 +48,24 @@ navigateur le retient d'une réunion à l'autre. **Il n'y a pas d'utilisateur à
 commuter** : quand le tour de Bruno vient, Bruno envoie depuis son téléphone. Si
 un prénom est faux, on corrige le champ.
 
+### Le tour de parole
+
+Un **réglage**, pas une hiérarchie (§5), qui se bascule depuis `/animateur` :
+
+- **main libre** — le cas par défaut. Chacun affiche ce qu'il veut et tourne les
+  pages. Sur une réunion à trois, c'est ce qu'on veut : personne n'a envie de
+  demander la parole.
+- **tour de parole fermé** — un seul téléphone pilote l'écran à la fois. Celui
+  qui a la main la garde jusqu'à ce qu'il la rende, ou que l'animateur la donne
+  à quelqu'un d'autre.
+
+**Déposer n'a jamais rien à voir avec la main** : on prépare son document
+pendant que quelqu'un d'autre présente.
+
 ### Ce que ça ne fait PAS encore
 
-- **Pas de tour de parole réglé** : la main est libre, n'importe qui peut
-  afficher n'importe quel document et tourner les pages. Le réglage « seul
-  l'animateur distribue la parole » (§5) viendra avec la page `/animateur`.
-- **Pas de bouton « Terminer »**.
+Toute la phase 4 : vidéos, retour à l'accueil après un délai, mode sombre pour
+ne pas éblouir, télécommande au clavier pour l'écran.
 
 ### Un écart assumé au découpage en phases
 
@@ -104,6 +116,7 @@ navigateur** et non un protocole de diffusion (§3.1), les documents deviennent
 | --- | --- |
 | `/scene` | l'écran de la salle, à ouvrir en plein écran une fois pour toutes |
 | `/salle/<code>` | les participants — c'est là que mène le QR code |
+| `/animateur` | celui qui mène : tour de parole, main, retrait d'un document, fin de réunion |
 | `/` | celui qui installe l'écran : un lien vers `/scene`, rien d'autre |
 | `/api/etat` | l'état public, pour déboguer d'un coup de `curl` |
 | `/api/afficher` | remettre un document à l'écran — `POST`, code de salle exigé |
@@ -146,6 +159,29 @@ pour lui. Si l'accès à distance devient nécessaire, `tailscale serve`, jamais
 `funnel`.
 
 ---
+
+## Ce que le code de salle protège, et ce qu'il ne protège pas
+
+Il ferme **les gestes** : déposer un document, en remettre un à l'écran, tourner
+les pages, et tout ce que fait l'animateur. Sans lui, on ne fait rien.
+
+Il ne ferme **pas la lecture**. `/api/etat` répond à qui peut joindre le
+serveur, et il contient le code — il le faut bien, puisque l'écran de la salle
+doit l'afficher en grand sans avoir rien à prouver. Quiconque atteint le serveur
+et connaît cette adresse connaît donc le code.
+
+C'est assumé, et c'est ce que dit le cahier : le code est l'équivalent du code
+de retrait d'Impression Express, « assez pour empêcher le bureau d'à côté »
+(§4). **La vraie frontière du service est le réseau de la salle** (§9.3) — pas
+ces quatre chiffres.
+
+Même remarque pour l'identifiant de participant : il est tiré au sort par le
+téléphone et voyage en clair. Il empêche les gestes involontaires, pas un
+participant décidé à reprendre la main.
+
+Si un jour cela ne suffit plus, il ne faudra pas durcir le code de salle mais
+changer de conception — et le §9.3 rappelle que ce service n'a rien à faire sur
+Internet.
 
 ## Les réglages
 
@@ -242,5 +278,5 @@ d'attaquer la phase 2.
 3. **Un vrai `.pptx` déposé depuis un vrai téléphone**, pour confirmer les
    mesures ci-dessus hors laboratoire.
 
-~~La conversion dans le conteneur~~ — **fait** : le banc passe ses 56 contrôles
+~~La conversion dans le conteneur~~ — **fait** : le banc passe ses 89 contrôles
 dans le conteneur, sans aucun `IGNORE`.
