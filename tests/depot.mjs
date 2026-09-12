@@ -355,8 +355,13 @@ const bruno = (await poster('/api/rejoindre', { prenom: 'Bruno' }).then((r) => r
 
 verifier('rejoindre la salle attribue un participant',
   /^[a-f0-9]{16}$/.test(camille) && /^[a-f0-9]{16}$/.test(bruno) && camille !== bruno);
+// Par identifiant, et non en comptant les prenoms : les depots precedents ont
+// deja cree des participants nommes Camille et Bruno, et un compte ne tiendrait
+// donc que sur un poste ou la conversion echoue. C'est le conteneur qui l'a dit.
+const vus = (await etatDe()).participants;
 verifier('les participants apparaissent dans l’état, avec leur prénom',
-  (await etatDe()).participants.filter((p) => ['Camille', 'Bruno'].includes(p.prenom)).length === 2);
+  vus.some((p) => p.id === camille && p.prenom === 'Camille')
+  && vus.some((p) => p.id === bruno && p.prenom === 'Bruno'));
 verifier('la main est libre par défaut', (await etatDe()).laMainEstLibre === true);
 
 // L'animateur ferme le tour de parole.
