@@ -100,11 +100,19 @@
 
   /* --- Le document affiche ---------------------------------------------- */
 
-  #vue { display: none; height: 100%; position: relative; }
+  /* Le document EN HAUT, la barre EN DESSOUS — et non par-dessus.
+     La premiere version incrustait la barre sur le document, avec un degrade :
+     c'etait joli sur un fond sombre et illisible sur une page blanche, qui est
+     pourtant le cas normal d'un document de reunion. Le texte gris disparaissait
+     dans le blanc, et la barre mangeait le bas de la page. */
+  #vue { display: none; height: 100%; flex-direction: column; }
 
   #page {
+    flex: 1;
+    /* Sans min-height, un element flexible refuse de descendre sous la taille
+       de son contenu : l'image deborderait au lieu de se reduire. */
+    min-height: 0;
     width: 100%;
-    height: 100%;
     object-fit: contain;
     /* Les vieilles WebView ignorent object-fit : le repli garde au moins
        l'image entiere dans le cadre. */
@@ -114,16 +122,16 @@
     background: var(--fond);
   }
 
-  /* L'incrustation du bas : le code de salle reste visible en permanence
-     (§4), sinon un retardataire ne peut plus rejoindre la reunion. */
+  /* Le code de salle reste visible en permanence (§4), sinon un retardataire
+     ne peut plus rejoindre la reunion. */
   #barre {
-    position: absolute;
-    left: 0; right: 0; bottom: 0;
+    flex: none;
     display: flex;
     align-items: center;
     gap: 2.4vh;
     padding: 1.4vh 2.4vh;
-    background: linear-gradient(to top, rgba(11,13,16,0.92), rgba(11,13,16,0));
+    background: var(--fond);
+    border-top: 1px solid var(--trait);
     font-size: 2.2vh;
   }
   #barre-qr {
@@ -301,7 +309,7 @@
       document.getElementById('barre-page').textContent =
         a.nbPages > 1 ? (a.page + 1) + ' / ' + a.nbPages : '';
       accueil.style.display = 'none';
-      vue.style.display = 'block';
+      vue.style.display = 'flex';   // et non 'block' : la barre se range sous la page
     } else {
       imageAffichee = null;
       page.removeAttribute('src');
