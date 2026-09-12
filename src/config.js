@@ -1,9 +1,9 @@
 // ============================================================================
 // LES REGLAGES
 //
-// Meme parti pris qu'Impression Express : un fichier de verite dans le dossier
-// de donnees, les variables d'environnement ne donnant que la valeur du tout
-// premier demarrage.
+// Meme parti pris que le service d'impression dont ce projet descend : un seul
+// fichier de verite dans le dossier de donnees, les variables d'environnement
+// ne donnant que la valeur du tout premier demarrage.
 //
 // A NE PAS confondre avec les documents de la reunion : les reglages
 // survivent au redemarrage, les documents JAMAIS (voir §9 du cahier).

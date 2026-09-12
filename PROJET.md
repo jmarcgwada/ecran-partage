@@ -20,7 +20,8 @@ Pas de câble à brancher, pas de logiciel à installer, pas de compte.
   vivant d'un portable. Le partage d'écran temps réel est un tout autre métier
   (WebRTC, capture, latence) et n'a rien à faire dans une première version.
 - **Pas de monétisation.** Ni tarif, ni file d'attente à valider, ni journal de
-  recette. C'est la grande différence avec [[impression-express]], et elle
+  recette. C'est la grande différence avec le service d'impression dont ce projet
+  descend, et elle
   simplifie énormément : personne n'a besoin de « valider » avant l'affichage.
 - **Pas un service exposé sur Internet.** Une réunion se tient dans une salle,
   sur un réseau. Voir §4.
@@ -30,8 +31,8 @@ Pas de câble à brancher, pas de logiciel à installer, pas de compte.
 ## 2. Faisabilité : le verdict
 
 **Faisable, et sans difficulté technique majeure.** La raison est simple : les
-quatre morceaux difficiles sont déjà écrits et éprouvés dans
-`testcode/impression-express`, tournant en production sur le NAS.
+quatre morceaux difficiles sont déjà écrits et éprouvés dans un service
+d'impression jumeau, tournant en production sur le même NAS.
 
 | Morceau | État |
 | --- | --- |
@@ -92,7 +93,7 @@ unique** : les commandes, elles, arrivent des téléphones par de simples POST.
 
 `Server-Sent Events` suffit donc, tient en trente lignes de Node sans
 dépendance, et **évite le piège des en-têtes WebSocket du proxy inverse DSM**
-qui a déjà coûté du temps sur WebPhone.
+qui a déjà coûté du temps ailleurs.
 
 > Si un jour la page passe par le proxy inverse DSM, penser à désactiver la
 > mise en tampon, sinon le flux SSE arrive par paquets avec des secondes de
@@ -103,7 +104,7 @@ qui a déjà coûté du temps sur WebPhone.
 L'écran affiche en permanence, en petit, un **code à quatre chiffres**. Le QR
 code mène à `/salle/<code>`. Sans le code, on ne dépose rien.
 
-C'est l'équivalent du code de retrait d'Impression Express : assez pour empêcher
+C'est l'équivalent d'un code de retrait en magasin : assez pour empêcher
 le bureau d'à côté d'envoyer une photo pendant la réunion, sans rien à
 administrer. Le code change à chaque nouvelle réunion.
 
@@ -189,11 +190,11 @@ salle = {
 
 ---
 
-## 8. Ce qu'on reprend d'Impression Express
+## 8. Ce qu'on reprend du service d'impression
 
-Le dépôt `jmarcgwada/impression-express`, dossier local
-`C:\Users\jmarc\testcode\impression-express`. **Copier les fichiers, ne pas les
-importer** : les deux projets doivent rester indépendants.
+Quatre fichiers viennent d'un service d'impression écrit pour le même NAS, et
+éprouvé en production. **Copier les fichiers, ne pas les importer** : les deux
+projets doivent rester indépendants.
 
 | Fichier | Ce qu'on en fait |
 | --- | --- |
@@ -228,7 +229,7 @@ retrouver quelque part. Trois règles, à ne pas assouplir :
 
 ## 10. Pièges connus — tous déjà payés ailleurs
 
-Ceux-ci ont coûté du temps sur Impression Express ou WebPhone. Les lire évite de
+Ceux-ci ont coûté du temps sur d'autres services du même NAS. Les lire évite de
 les repayer.
 
 ### Sur le dépôt de fichiers
@@ -301,7 +302,7 @@ Vidéos, retour à l'écran d'accueil après un délai, mode sombre pour ne pas
 
 ## 12. Comment vérifier
 
-Reprendre la méthode d'Impression Express, qui a trouvé de vrais défauts :
+Reprendre la méthode du service d'impression, qui a trouvé de vrais défauts :
 
 - **Un banc d'essai qui monte le vrai serveur HTTP en mémoire** et le sollicite
   comme un navigateur (`tests/depot.mjs` sert de modèle). Zéro dépendance.

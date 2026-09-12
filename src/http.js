@@ -1,9 +1,9 @@
 // ============================================================================
 // LA PLOMBERIE HTTP
 //
-// Reprise d'Impression Express, allegee de ce qui n'a pas de sens ici : pas de
-// session ni de mot de passe, une reunion se protege par le code de salle et
-// par le reseau (§9.3), pas par des comptes.
+// Reprise du service d'impression, allegee de ce qui n'a pas de sens ici :
+// pas de session ni de mot de passe, une reunion se protege par le code de
+// salle et par le reseau (§9.3), pas par des comptes.
 //
 // Rien dans ce fichier ne connait les reunions : c'est volontaire.
 // ============================================================================

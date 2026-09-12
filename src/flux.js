@@ -4,7 +4,7 @@
 // A SENS UNIQUE, et c'est tout l'interet : le serveur pousse « affiche
 // maintenant telle page », les commandes, elles, arrivent des telephones par
 // de simples POST. Un WebSocket serait de trop — et surtout il rouvrirait le
-// piege des en-tetes du proxy inverse DSM, deja paye sur WebPhone.
+// piege des en-tetes du proxy inverse DSM, deja paye ailleurs.
 //
 // Trente lignes, aucune dependance, et une reconnexion automatique offerte par
 // le navigateur.

@@ -14,7 +14,7 @@
 //                   un PDF : c'est plus rapide et la photo reste nette)
 //   Word, Excel… -> LibreOffice vers un PDF, puis pdftoppm
 //
-// Allege d'Impression Express : le comptage tarifaire des pages et la mesure
+// Allege du service d'impression : le comptage tarifaire des pages et la mesure
 // du remplissage en encre n'ont plus lieu d'etre, une reunion ne se facture pas.
 // ============================================================================
 

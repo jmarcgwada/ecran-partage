@@ -5,7 +5,7 @@
 # Debian plutot qu'Alpine : LibreOffice y est complet et teste, alors qu'Alpine
 # demande des contorsions pour le meme resultat.
 #
-# Par rapport a Impression Express, dont cette image descend : CUPS et
+# Par rapport au service d'impression dont cette image descend : CUPS et
 # Ghostscript sont partis. On n'imprime rien, et la mesure du remplissage en
 # encre n'a aucun sens pour une reunion.
 # ============================================================================

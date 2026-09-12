@@ -15,8 +15,9 @@ s'en servir**.
 
 ## Où en est le projet
 
-**Phase 1 livrée.** L'écran affiche quelque chose, et c'est déjà utilisable en
-réunion : un participant dépose, le document apparaît.
+**Les quatre phases du cahier sont livrées**, déployées et éprouvées au banc
+dans le conteneur. Ce qui reste à faire n'est pas du code : voir la fin de ce
+fichier.
 
 | Phase | État |
 | --- | --- |
@@ -25,7 +26,7 @@ réunion : un participant dépose, le document apparaît.
 | 3 — la fin de réunion (bouton « Terminer ») | **fait** |
 | 4 — le confort (vidéos, atténuation, télécommande clavier) | **fait** |
 
-### Ce que la phase 1 fait
+### Ce que ça fait
 
 - `/scene` affiche le QR code et le code de salle en grand, puis bascule sur le
   document dès qu'il est prêt ;
@@ -115,19 +116,19 @@ Les quatre phases du cahier sont livrées. Ce qui reste est hors de son périmè
 — et le §1 le dit : **ce n'est pas du partage d'écran en direct.** On envoie des
 documents, pas le contenu vivant d'un portable.
 
-### Un écart assumé au découpage en phases
+### L'effacement, et ses trois voies
 
-Le §11 range l'effacement en phase 3. Il est **déjà là**, parce que le §9 le
-déclare non négociable et que la phase 1 écrit dès maintenant des documents
-confidentiels sur le NAS :
+Le §9 ne souffre pas d'exception : une réunion terminée ne laisse rien.
 
-- **le démarrage efface tout** et tire un nouveau code (conséquence à connaître :
-  redémarrer le conteneur met fin à la réunion en cours) ;
-- **le filet de sécurité** efface une réunion oubliée après quelques heures
-  d'inactivité (`ECR_EFFACEMENT_HEURES`, 4 par défaut).
+- **« Terminer la réunion »**, depuis `/animateur` : les fichiers quittent le
+  disque, un nouveau code est tiré, l'écran revient au QR code d'accueil.
+- **Le démarrage efface tout** et tire un nouveau code. Conséquence à connaître :
+  redémarrer le conteneur met fin à la réunion en cours.
+- **Le filet de sécurité** efface une réunion que personne n'a terminée, après
+  quelques heures d'inactivité (`ECR_EFFACEMENT_HEURES`, 4 par défaut).
 
-Ce qui manque de la phase 3, c'est le **bouton** : aujourd'hui on termine une
-réunion en redémarrant le conteneur.
+L'animateur peut aussi **retirer un document** envoyé par erreur : là encore le
+fichier quitte le disque, il n'est pas seulement retiré d'une liste.
 
 ---
 
@@ -148,7 +149,7 @@ réunion en redémarrant le conteneur.
 | `src/documents.js` | la conversion : LibreOffice → PDF → `pdftoppm` → images de pages |
 | `src/flux.js` | le lien temps réel vers l'écran (SSE), trente lignes |
 | `src/api.js` | l'aiguillage, le dépôt, le QR code, le service des pages |
-| `src/multipart.js` | la lecture des envois, **copiée telle quelle** d'Impression Express |
+| `src/multipart.js` | la lecture des envois, **copiée telle quelle** du service d'impression |
 | `src/http.js` | la plomberie HTTP, reprise et allégée (ni session ni mot de passe ici) |
 
 Trois décisions à ne pas défaire sans relire le cahier : l'écran est **un
@@ -221,7 +222,7 @@ doit l'afficher en grand sans avoir rien à prouver. Quiconque atteint le serveu
 et connaît cette adresse connaît donc le code.
 
 C'est assumé, et c'est ce que dit le cahier : le code est l'équivalent du code
-de retrait d'Impression Express, « assez pour empêcher le bureau d'à côté »
+de retrait d'un magasin, « assez pour empêcher le bureau d'à côté »
 (§4). **La vraie frontière du service est le réseau de la salle** (§9.3) — pas
 ces quatre chiffres.
 
