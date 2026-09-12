@@ -23,7 +23,7 @@ import {
 import { lireMultipart } from './multipart.js';
 import { preparer, typeAccepte, extensionsAcceptees } from './documents.js';
 import {
-  salle, etatPublic, codeJuste, reconnaitre, afficher,
+  salle, etatPublic, codeJuste, reconnaitre, afficher, tournerPage,
   ouvrirDocument, documentPret, documentEnEchec, dossierDuDocument,
 } from './salle.js';
 import { ouvrirFlux } from './flux.js';
@@ -202,6 +202,27 @@ async function mettreALEcran(req, res, url) {
   return json(res, 200, { affichage: etatPublic().affichage });
 }
 
+// Tourner une page du document affiche. Le telephone envoie un SENS, pas un
+// numero : voir tournerPage() pour la raison, qui se sent des qu'on appuie deux
+// fois de suite sur « Suivante ».
+async function tourner(req, res, url) {
+  if (!codeJuste(url.searchParams.get('code'))) {
+    await viderRequete(req);
+    return erreur(res, 403, 'Code de salle incorrect.', { fermer: true });
+  }
+
+  let corps;
+  try {
+    corps = await lireCorpsJson(req);
+  } catch {
+    return erreur(res, 400, 'Demande illisible.');
+  }
+
+  const page = tournerPage(corps.sens);
+  if (page === null) return erreur(res, 404, "Aucun document n'est affiché.");
+  return json(res, 200, { affichage: etatPublic().affichage });
+}
+
 // --- Aiguillage -------------------------------------------------------------
 
 export function creerGestionnaire() {
@@ -222,6 +243,7 @@ export function creerGestionnaire() {
       }
       if (chemin === '/api/depot' && req.method === 'POST') return await recevoirDepot(req, res, url);
       if (chemin === '/api/afficher' && req.method === 'POST') return await mettreALEcran(req, res, url);
+      if (chemin === '/api/page' && req.method === 'POST') return await tourner(req, res, url);
       if (chemin === '/api/qr.svg' && req.method === 'GET') return await servirQr(req, res);
 
       if (chemin.startsWith('/page/')) return servirPage(res, chemin);

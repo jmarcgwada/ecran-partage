@@ -24,8 +24,13 @@
   var liste = document.getElementById('liste');
   var listeVide = document.getElementById('liste-vide');
   var listeAide = document.getElementById('liste-aide');
-  var boutonChanger = document.getElementById('changer');
   var ligneRetenu = document.getElementById('retenu');
+  var commande = document.getElementById('commande');
+  var commandeNom = document.getElementById('commande-nom');
+  var commandePage = document.getElementById('commande-page');
+  var zonePages = document.getElementById('pages');
+  var boutonPrecedent = document.getElementById('precedent');
+  var boutonSuivant = document.getElementById('suivant');
 
   var limites = { tailleMaxMo: 50, fichiersMax: 10 };
   var mesDocuments = {};
@@ -41,10 +46,10 @@
   function retenir(cle, valeur) {
     try { localStorage.setItem(cle, valeur); } catch (err) { /* navigation privee */ }
   }
-  function oublier(cle) {
-    try { localStorage.removeItem(cle); } catch (err) { /* idem */ }
-  }
 
+  // Un telephone = une personne. Le prenom se saisit une fois, ce navigateur le
+  // retient, et il n'y a donc pas d'utilisateur a commuter : si le prenom est
+  // faux, on corrige le champ.
   champPrenom.value = retenu('ecr_prenom');
   champPrenom.addEventListener('change', function () {
     retenir('ecr_prenom', champPrenom.value.trim());
@@ -52,30 +57,10 @@
   });
 
   function majIdentite() {
-    // « Connu » veut dire : ce telephone a deja servi a quelqu'un. Le prenom
-    // seul ne suffit pas comme critere — on peut avoir depose sans se nommer,
-    // et il faut tout de meme pouvoir passer la main.
-    var connu = !!(champPrenom.value.trim() || retenu('ecr_participant'));
-    boutonChanger.hidden = !connu;
-    ligneRetenu.textContent = connu
+    ligneRetenu.textContent = champPrenom.value.trim()
       ? 'Ce téléphone se souvient de vous d’une réunion à l’autre.'
       : '';
   }
-
-  // Passer le telephone a quelqu'un d'autre. Tout se joue DANS CE NAVIGATEUR :
-  // le serveur n'a rien a oublier, il ne connait personne. Les documents deja
-  // envoyes gardent le prenom sous lequel ils l'ont ete — ils ont bien ete
-  // envoyes par quelqu'un d'autre, les renommer serait un mensonge.
-  boutonChanger.addEventListener('click', function () {
-    oublier('ecr_prenom');
-    oublier('ecr_participant');
-    champPrenom.value = '';
-    mesDocuments = {};
-    majIdentite();
-    if (dernierEtat) appliquer(dernierEtat);   // la liste perd ses « (vous) »
-    champPrenom.focus();
-    dire('À vous. Saisissez votre prénom, puis envoyez votre document.', 'bien');
-  });
 
   majIdentite();
 
@@ -156,7 +141,6 @@
       }
 
       if (reponse.participant) retenir('ecr_participant', reponse.participant);
-      majIdentite();   // le téléphone connaît quelqu'un : on peut passer la main
       for (var k = 0; k < (reponse.documents || []).length; k++) {
         mesDocuments[reponse.documents[k].id] = true;
       }
@@ -210,6 +194,7 @@
     dernierEtat = etat;
     document.getElementById('code').textContent = etat.code;
     document.getElementById('nom-salle').textContent = etat.nomSalle || '';
+    majCommande(etat);
 
     if (etat.limites) limites = etat.limites;
     if (etat.formats) {
@@ -281,6 +266,53 @@
 
     listeAide.hidden = affichables === 0;
   }
+
+  // --- La télécommande ------------------------------------------------------
+
+  function majCommande(etat) {
+    var a = etat.affichage;
+    if (!a || !a.documentId) {
+      commande.hidden = true;
+      return;
+    }
+    commande.hidden = false;
+    commandeNom.textContent = a.nom + (a.prenom ? ' — ' + a.prenom : '');
+
+    // Un document d'une seule page n'a rien à tourner : les boutons
+    // disparaissent plutôt que de rester grisés sans qu'on sache pourquoi.
+    zonePages.hidden = a.nbPages < 2;
+    commandePage.textContent = (a.page + 1) + ' / ' + a.nbPages;
+    boutonPrecedent.disabled = a.page <= 0;
+    boutonSuivant.disabled = a.page >= a.nbPages - 1;
+  }
+
+  function tourner(sens) {
+    var requete = new XMLHttpRequest();
+    requete.open('POST', '/api/page?code=' + encodeURIComponent(code));
+    requete.setRequestHeader('content-type', 'application/json');
+
+    requete.onload = function () {
+      if (requete.status === 200) return dire('', '');
+      if (requete.status === 403) {
+        return dire('Code de salle incorrect. Rescannez le QR code affiché sur l’écran.', 'erreur');
+      }
+      var reponse = {};
+      try { reponse = JSON.parse(requete.responseText); } catch (err) { /* message par défaut */ }
+      dire(reponse.erreur || 'Impossible de tourner la page.', 'erreur');
+    };
+    requete.onerror = function () {
+      dire('Connexion interrompue. Êtes-vous toujours sur le réseau de la salle ?', 'erreur');
+    };
+
+    // On n'attend pas la réponse pour réagir : les boutons restent actifs, et
+    // c'est VOULU. Le serveur tient le compte des pages, deux appuis rapides
+    // avancent donc bien de deux pages — c'est pour cela qu'on lui envoie un
+    // sens plutôt qu'un numéro. L'écran, lui, sera informé par le flux.
+    requete.send(JSON.stringify({ sens: sens }));
+  }
+
+  boutonPrecedent.addEventListener('click', function () { tourner(-1); });
+  boutonSuivant.addEventListener('click', function () { tourner(1); });
 
   // Un seul ecouteur, pose une fois pour toutes sur la liste.
   liste.addEventListener('click', function (evenement) {

@@ -15,15 +15,27 @@
 </header>
 
 <main>
-  <!-- L'identite d'abord, et dans sa propre rubrique : dans la version
-       precedente le prenom etait perdu en haut du formulaire d'envoi, et rien
-       ne laissait deviner que c'etait LA qu'on changeait d'utilisateur. -->
+  <!-- La telecommande, en PREMIER : pendant une reunion, celui qui presente
+       passe son temps ici, pas dans le formulaire d'envoi. Repliee tant que
+       l'ecran est a l'accueil. -->
+  <section id="commande" hidden>
+    <h2>À l’écran</h2>
+    <p id="commande-nom"></p>
+    <div class="pages" id="pages" hidden>
+      <button type="button" class="bouton secondaire" id="precedent">‹ Précédente</button>
+      <span id="commande-page">1 / 1</span>
+      <button type="button" class="bouton secondaire" id="suivant">Suivante ›</button>
+    </div>
+  </section>
+
+  <!-- Un telephone = une personne : le prenom se saisit une fois et ce
+       navigateur le retient. Il n'y a pas d'utilisateur a commuter — si le
+       prenom est faux, on corrige le champ. -->
   <section>
     <h2>Vous</h2>
     <label for="prenom">Votre prénom — il s’affiche à côté de vos documents (facultatif)</label>
     <input type="text" id="prenom" autocomplete="given-name" placeholder="Camille" maxlength="40">
     <p class="vide" id="retenu"></p>
-    <button type="button" class="bouton secondaire" id="changer" hidden>Ce n’est pas moi — changer d’utilisateur</button>
   </section>
 
   <section>

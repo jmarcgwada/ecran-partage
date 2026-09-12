@@ -105,6 +105,32 @@ a.bouton { text-decoration: none; }
 }
 .bouton + .bouton { margin-top: 0.7rem; }
 
+/* La télécommande : deux boutons larges et le numéro de page entre eux. Se
+   manœuvre d'une main, sans regarder — on regarde l'écran de la salle. */
+.pages {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+.pages .bouton { flex: 1; margin-top: 0; padding: 1rem 0.5rem; }
+.pages .bouton + .bouton { margin-top: 0; }
+.pages span {
+  flex: none;
+  min-width: 4.5rem;
+  text-align: center;
+  color: var(--discret);
+  font-variant-numeric: tabular-nums;
+}
+
+#commande-nom {
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+
 #choisis {
   margin: 0.7rem 0 0;
   color: var(--discret);

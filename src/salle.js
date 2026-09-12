@@ -189,6 +189,27 @@ export function afficher(documentId, page = 0) {
   return true;
 }
 
+// Tourner une page du document AFFICHE. Le sens plutot qu'un numero de page :
+// le telephone qui commande peut avoir une seconde de retard sur l'ecran, et
+// deux appuis rapides sur « Suivante » doivent avancer de deux pages, pas
+// d'une seule. C'est le serveur qui sait ou l'on en est.
+//
+// Rend le nouveau numero de page, ou null s'il n'y a rien a tourner.
+export function tournerPage(sens) {
+  const document = documentPar(salle.affichage.documentId);
+  if (!document || document.etat !== 'pret') return null;
+
+  const cible = salle.affichage.page + (Number(sens) >= 0 ? 1 : -1);
+  // On s'arrete aux bords sans rien signaler : une page de plus apres la
+  // derniere n'est pas une erreur, c'est la fin du document.
+  if (cible < 0 || cible >= document.pages.length) return salle.affichage.page;
+
+  salle.affichage = { documentId: document.id, page: cible };
+  toucher();
+  signaler();
+  return cible;
+}
+
 export function revenirAAccueil() {
   salle.affichage = { documentId: null, page: 0 };
   toucher();

@@ -51,17 +51,24 @@ const base = `http://127.0.0.1:${port}`;
 
 // --- Deux outils ------------------------------------------------------------
 
-// Un PDF d'une page, fabrique ici avec de vraies positions dans la table
-// d'index : un PDF approximatif serait peut-etre rattrape par poppler, et le
-// controle ne prouverait plus rien.
-function pdfDUnePage() {
-  const objets = [
-    '<</Type/Catalog/Pages 2 0 R>>',
-    '<</Type/Pages/Kids[3 0 R]/Count 1>>',
-    '<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>',
-    '<</Length 58>>\nstream\nBT /F1 24 Tf 20 100 Td (Ecran Partage) Tj ET\nendstream',
-    '<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>',
-  ];
+// Un PDF, fabrique ici avec de vraies positions dans la table d'index : un PDF
+// approximatif serait peut-etre rattrape par poppler, et le controle ne
+// prouverait plus rien. Chaque page porte son numero, pour qu'on puisse verifier
+// a l'oeil que c'est bien la bonne qui s'affiche.
+function pdfDePages(nbPages) {
+  const objets = ['<</Type/Catalog/Pages 2 0 R>>'];
+
+  const enfants = [];
+  for (let p = 0; p < nbPages; p++) enfants.push(`${3 + p * 2} 0 R`);
+  objets.push(`<</Type/Pages/Kids[${enfants.join(' ')}]/Count ${nbPages}>>`);
+
+  const police = 3 + nbPages * 2;
+  for (let p = 0; p < nbPages; p++) {
+    const texte = `BT /F1 36 Tf 40 400 Td (Page ${p + 1}) Tj ET`;
+    objets.push(`<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]/Contents ${4 + p * 2} 0 R/Resources<</Font<</F1 ${police} 0 R>>>>>>`);
+    objets.push(`<</Length ${texte.length}>>\nstream\n${texte}\nendstream`);
+  }
+  objets.push('<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>');
 
   let corps = '%PDF-1.4\n';
   const positions = [];
@@ -150,7 +157,7 @@ function depot(codeUtilise, nomFichier, contenu, champs = {}) {
   });
 }
 
-const contenu = pdfDUnePage();
+const contenu = pdfDePages(1);
 
 const mauvais = await depot(String((Number(code) + 1) % 10000).padStart(4, '0'), 'espion.pdf', contenu);
 verifier('sans le bon code, on ne dépose rien', mauvais.status === 403, String(mauvais.status));
@@ -267,6 +274,64 @@ if (!outils) {
     `page ${borne.affichage.page} sur ${borne.affichage.nbPages}`);
 }
 
+// --- Tourner les pages ------------------------------------------------------
+
+const tourner = (codeUtilise, sens) =>
+  fetch(`${base}/api/page?code=${encodeURIComponent(codeUtilise)}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sens }),
+  });
+
+verifier('sans le bon code, on ne tourne pas les pages',
+  (await tourner(codeFaux, 1)).status === 403);
+verifier('le serveur répond encore après ce refus',
+  (await fetch(`${base}/api/sante`)).ok);
+
+if (!outils) {
+  ignore('les pages se tournent depuis le téléphone', 'aucune page convertie hors conteneur');
+} else {
+  const troisPages = await depot(code, 'rapport.pdf', pdfDePages(3), { prenom: 'Camille' });
+  const idTrois = (await troisPages.json()).documents[0].id;
+  const pret = await flux.attendre((e) => {
+    const d = e.documents.find((x) => x.id === idTrois);
+    return d && d.etat === 'pret';
+  }, 60_000);
+  verifier('le document de trois pages est converti',
+    pret !== null && pret.documents.find((d) => d.id === idTrois).nbPages === 3);
+
+  await afficherAvec(code, idTrois, 0);
+  const page = async () => (await fetch(`${base}/api/etat`).then((r) => r.json())).affichage;
+
+  verifier('la page suivante avance d’une page',
+    (await tourner(code, 1).then((r) => r.json())).affichage.page === 1);
+  verifier('la page précédente recule d’une page',
+    (await tourner(code, -1).then((r) => r.json())).affichage.page === 0);
+  verifier('on ne recule pas avant la première page',
+    (await tourner(code, -1).then((r) => r.json())).affichage.page === 0);
+
+  // LE controle qui justifie d'envoyer un SENS et non un numero de page : deux
+  // appuis partis ensemble, depuis un telephone qui croit encore etre page 0,
+  // doivent avancer de DEUX pages. Avec un numero, le second ecraserait le
+  // premier et l'on n'avancerait que d'une.
+  await Promise.all([tourner(code, 1), tourner(code, 1)]);
+  verifier('deux appuis rapides avancent de deux pages',
+    (await page()).page === 2, `page ${(await page()).page}`);
+
+  verifier('on ne dépasse pas la dernière page',
+    (await tourner(code, 1).then((r) => r.json())).affichage.page === 2);
+
+  // L'ecran doit suivre : une page tournee est un evenement comme un autre.
+  verifier('l’écran est prévenu du changement de page',
+    (await flux.attendre((e) => e.affichage.documentId === idTrois && e.affichage.page === 2, 5000)) !== null);
+
+  const image = await fetch(base + (await page()).image);
+  verifier('la troisième page se sert bien comme une image',
+    image.status === 200 && image.headers.get('content-type') === 'image/jpeg');
+
+  await afficherAvec(code, identifiant, 0);   // on remet l'écran où il était
+}
+
 // --- Ce qui ne doit pas sortir ---------------------------------------------
 
 const etat = await fetch(`${base}/api/etat`).then((r) => r.json());
@@ -329,6 +394,8 @@ verifier('un nouveau code est tiré', /^\d{4}$/.test(nouveau) && nouveau !== anc
 verifier('plus aucun document dans l’état', salleModule.etatPublic().documents.length === 0);
 verifier('l’écran est revenu à l’accueil',
   salleModule.etatPublic().affichage.documentId === null);
+verifier('sans document à l’écran, il n’y a pas de page à tourner',
+  (await tourner(nouveau, 1)).status === 404);
 verifier('l’écran est prévenu de la fin de réunion',
   (await flux.attendre((e) => e.code === nouveau, 3000)) !== null);
 verifier('les pages de l’ancienne réunion ne se servent plus',
