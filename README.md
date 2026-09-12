@@ -21,7 +21,7 @@ réunion : un participant dépose, le document apparaît.
 | Phase | État |
 | --- | --- |
 | 1 — l'écran affiche quelque chose | **fait** |
-| 2 — le tour de parole | à faire |
+| 2 — le tour de parole | *entamée* — « Afficher » fait, les commandes de page restent |
 | 3 — la fin de réunion (bouton « Terminer ») | *partiellement* — voir ci-dessous |
 | 4 — le confort (vidéos, mode sombre, télécommande) | à faire |
 
@@ -35,16 +35,21 @@ réunion : un participant dépose, le document apparaît.
   d'images de pages ;
 - le lien temps réel (SSE) prévient l'écran sans qu'il ait rien à demander ;
 - l'écran annonce « réception d'un document… » pendant la conversion, pour
-  qu'on ne croie pas à une panne.
+  qu'on ne croie pas à une panne ;
+- **« Afficher »** remet à l'écran un document déjà déposé, sans le renvoyer :
+  il reste disponible jusqu'à la fin de la réunion ;
+- **« Ce n'est pas moi »** passe le téléphone à quelqu'un d'autre — le prénom
+  et l'identité retenus dans ce navigateur sont oubliés.
 
-### Ce que la phase 1 ne fait PAS encore
+### Ce que ça ne fait PAS encore
 
-- **Pas de tour de parole** : le dernier document prêt prend l'écran. C'est le
-  comportement prévu par le cahier pour cette phase.
 - **Pas de commandes de page** : seule la première page d'un document s'affiche.
-  Le modèle de données porte déjà le numéro de page, la phase 2 n'a qu'à poser
-  les boutons.
-- **Pas de bouton « Terminer »** ni de page `/animateur`.
+  Le modèle de données porte déjà le numéro de page et `/api/afficher` l'accepte
+  déjà — il ne reste que les boutons à poser.
+- **Pas de tour de parole réglé** : la main est libre, n'importe qui peut
+  afficher n'importe quel document. Le réglage « seul l'animateur distribue la
+  parole » (§5) viendra avec la page `/animateur`.
+- **Pas de bouton « Terminer »**.
 
 ### Un écart assumé au découpage en phases
 
@@ -97,6 +102,7 @@ navigateur** et non un protocole de diffusion (§3.1), les documents deviennent
 | `/salle/<code>` | les participants — c'est là que mène le QR code |
 | `/` | celui qui installe l'écran : un lien vers `/scene`, rien d'autre |
 | `/api/etat` | l'état public, pour déboguer d'un coup de `curl` |
+| `/api/afficher` | remettre un document à l'écran — `POST`, code de salle exigé |
 | `/api/flux` | le flux d'évènements |
 | `/api/sante` | pour le contrôle de santé du conteneur |
 
@@ -231,5 +237,5 @@ d'attaquer la phase 2.
 3. **Un vrai `.pptx` déposé depuis un vrai téléphone**, pour confirmer les
    mesures ci-dessus hors laboratoire.
 
-~~La conversion dans le conteneur~~ — **fait** : le banc passe ses 39 contrôles
+~~La conversion dans le conteneur~~ — **fait** : le banc passe ses 47 contrôles
 dans le conteneur, sans aucun `IGNORE`.
