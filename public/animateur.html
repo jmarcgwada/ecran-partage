@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d10">
+<title>Animer la réunion</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header>
+  <h1>Animer la réunion <span class="code" id="code">····</span></h1>
+  <p id="nom-salle">&nbsp;</p>
+</header>
+
+<main>
+  <!-- Le code de salle, et rien d'autre : le cahier ne veut pas de comptes
+       (§4). C'est assez pour empêcher le bureau d'à côté, et cela n'a jamais
+       prétendu être davantage. -->
+  <section id="entree">
+    <h2>Le code de la salle</h2>
+    <label for="code-saisi">Il est affiché sur l’écran de la salle</label>
+    <input type="text" id="code-saisi" inputmode="numeric" maxlength="4" placeholder="0000" autocomplete="off">
+    <button type="button" class="bouton" id="entrer">Entrer</button>
+    <div id="message-entree"></div>
+  </section>
+
+  <div id="pupitre" hidden>
+    <section>
+      <h2>Le tour de parole</h2>
+      <p class="vide" id="regime"></p>
+      <button type="button" class="bouton secondaire" id="basculer"></button>
+      <button type="button" class="bouton secondaire" id="liberer" hidden>Reprendre la main à tout le monde</button>
+    </section>
+
+    <section>
+      <h2>Participants</h2>
+      <ul class="documents" id="participants"></ul>
+      <p class="vide" id="participants-vides">Personne n’a encore ouvert la page de la salle.</p>
+    </section>
+
+    <section>
+      <h2>Documents</h2>
+      <ul class="documents" id="documents"></ul>
+      <p class="vide" id="documents-vides">Rien n’a encore été envoyé.</p>
+    </section>
+
+    <section>
+      <h2>Terminer</h2>
+      <p class="vide">
+        Termine la réunion : les documents sont <strong>effacés du disque</strong>,
+        un nouveau code est tiré, et l’écran revient au QR code d’accueil.
+        C’est sans retour.
+      </p>
+      <button type="button" class="bouton danger" id="terminer">Terminer la réunion</button>
+      <div id="message"></div>
+    </section>
+  </div>
+</main>
+
+<script src="/animateur.js"></script>
+</body>
+</html>

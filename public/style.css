@@ -210,6 +210,29 @@ ul.documents button.afficher {
 }
 ul.documents button.afficher:disabled { opacity: 0.45; }
 
+/* Retirer un document efface un fichier : le bouton le dit, sans crier. */
+ul.documents button.retirer {
+  flex: none;
+  padding: 0.6rem 1rem;
+  min-height: 44px;
+  border: 1px solid var(--trait);
+  border-radius: 0.55rem;
+  background: transparent;
+  color: var(--rouge);
+  font-family: inherit;
+  font-size: 0.92rem;
+  cursor: pointer;
+  -webkit-appearance: none;
+}
+
+/* Terminer la réunion est sans retour : le bouton ne doit ressembler à aucun
+   autre, et surtout pas au bleu qu'on appuie machinalement. */
+.bouton.danger {
+  background: transparent;
+  color: var(--rouge);
+  border: 1px solid var(--rouge);
+}
+
 .vide { color: var(--discret); font-size: 0.95rem; }
 
 footer {

@@ -131,6 +131,68 @@ export function reconnaitre(participantId, prenom) {
   return participant;
 }
 
+// --- Le tour de parole ------------------------------------------------------
+//
+// Deux regimes, et c'est un REGLAGE, pas une hierarchie (§5) :
+//
+//   la main est libre  — le cas par defaut. Chacun affiche ce qu'il veut et
+//                        tourne les pages. Sur une reunion a trois, c'est ce
+//                        qu'on veut : personne n'a envie de demander la parole.
+//   la main se prend   — un seul telephone pilote l'ecran a la fois. Celui qui
+//                        l'a la garde jusqu'a ce qu'il la rende, ou que
+//                        l'animateur la donne a quelqu'un d'autre.
+//
+// Ce qui est protege, c'est le PILOTAGE de l'ecran. Deposer reste toujours
+// permis : on prepare son document pendant que quelqu'un d'autre presente.
+//
+// L'identifiant de participant n'est pas un secret — il est tire au sort par le
+// telephone et voyage en clair. Il empeche les gestes involontaires, pas un
+// participant decide a reprendre la main. La vraie frontiere reste le reseau de
+// la salle et le code (§9.3) : une reunion n'est pas un systeme de comptes.
+
+export function peutPiloter(participantId) {
+  if (salle.laMainEstLibre) return true;
+  if (!salle.mainA) return false;      // la main est a prendre
+  return salle.mainA === participantId;
+}
+
+export function prendreLaMain(participantId) {
+  if (!participantId) return false;
+  if (salle.mainA && salle.mainA !== participantId) return false;
+  salle.mainA = participantId;
+  toucher();
+  signaler();
+  return true;
+}
+
+export function rendreLaMain(participantId) {
+  if (salle.mainA !== participantId) return false;
+  salle.mainA = null;
+  toucher();
+  signaler();
+  return true;
+}
+
+// Le geste de l'animateur : donner la main a quelqu'un, ou la liberer. Ne
+// demande l'accord de personne — c'est tout l'objet de la page /animateur.
+export function donnerLaMain(participantId) {
+  if (participantId && !salle.participants.some((p) => p.id === participantId)) return false;
+  salle.mainA = participantId || null;
+  toucher();
+  signaler();
+  return true;
+}
+
+export function reglerMainLibre(valeur) {
+  salle.laMainEstLibre = !!valeur;
+  // En passant au tour de parole, personne n'a la main : elle est a prendre.
+  // La donner d'office au dernier qui a parle serait une surprise.
+  if (!salle.laMainEstLibre) salle.mainA = null;
+  toucher();
+  signaler();
+  return salle.laMainEstLibre;
+}
+
 // --- Les documents ----------------------------------------------------------
 
 export function dossierDuDocument(id) {
@@ -210,6 +272,29 @@ export function tournerPage(sens) {
   return cible;
 }
 
+// Retirer un document : geste de l'animateur, pour la diapositive envoyee par
+// erreur. EFFACE le dossier du document, pages comprises — le §9 ne souffre pas
+// d'exception, retirer d'une liste ne serait pas retirer.
+export function retirerDocument(id) {
+  const index = salle.documents.findIndex((d) => d.id === id);
+  if (index < 0) return false;
+
+  salle.documents.splice(index, 1);
+  try {
+    fs.rmSync(dossierDuDocument(id), { recursive: true, force: true });
+  } catch (err) {
+    console.error('[salle] retrait incomplet :', err.message);
+  }
+
+  // S'il etait a l'ecran, l'ecran revient a l'accueil : afficher le document
+  // d'a cote serait une surprise, et laisser l'ancien serait un mensonge.
+  if (salle.affichage.documentId === id) salle.affichage = { documentId: null, page: 0 };
+
+  toucher();
+  signaler();
+  return true;
+}
+
 export function revenirAAccueil() {
   salle.affichage = { documentId: null, page: 0 };
   toucher();
@@ -228,6 +313,12 @@ export function etatPublic() {
     code: salle.code,
     ouverte: salle.ouverte,
     nomSalle: reglages.nomSalle,
+    laMainEstLibre: salle.laMainEstLibre,
+    mainA: salle.mainA,
+    // Les participants servent a la page de l'animateur, qui doit pouvoir
+    // donner la main a quelqu'un en le nommant. Leur identifiant circule donc —
+    // il n'a jamais ete un secret, voir le commentaire du tour de parole.
+    participants: salle.participants.map((p) => ({ id: p.id, prenom: p.prenom })),
     documents: salle.documents.map((d) => ({
       id: d.id,
       nom: d.nom,

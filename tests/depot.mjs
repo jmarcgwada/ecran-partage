@@ -332,6 +332,102 @@ if (!outils) {
   await afficherAvec(code, identifiant, 0);   // on remet l'écran où il était
 }
 
+// --- Le tour de parole ------------------------------------------------------
+//
+// Ce qui doit tenir : quand l'animateur ferme le tour de parole, un seul
+// telephone pilote l'ecran — mais TOUT LE MONDE peut continuer a deposer, on
+// prepare son document pendant que quelqu'un d'autre presente.
+
+const poster = (chemin, corps, codeUtilise = code) =>
+  fetch(`${base}${chemin}?code=${encodeURIComponent(codeUtilise)}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(corps),
+  });
+
+const etatDe = () => fetch(`${base}/api/etat`).then((r) => r.json());
+
+verifier('on ne rejoint pas la salle sans le bon code',
+  (await poster('/api/rejoindre', {}, codeFaux)).status === 403);
+
+const camille = (await poster('/api/rejoindre', { prenom: 'Camille' }).then((r) => r.json())).participant;
+const bruno = (await poster('/api/rejoindre', { prenom: 'Bruno' }).then((r) => r.json())).participant;
+
+verifier('rejoindre la salle attribue un participant',
+  /^[a-f0-9]{16}$/.test(camille) && /^[a-f0-9]{16}$/.test(bruno) && camille !== bruno);
+verifier('les participants apparaissent dans l’état, avec leur prénom',
+  (await etatDe()).participants.filter((p) => ['Camille', 'Bruno'].includes(p.prenom)).length === 2);
+verifier('la main est libre par défaut', (await etatDe()).laMainEstLibre === true);
+
+// L'animateur ferme le tour de parole.
+verifier('l’animateur ne ferme rien sans le bon code',
+  (await poster('/api/animateur/main-libre', { valeur: false }, codeFaux)).status === 403);
+verifier('l’animateur ferme le tour de parole',
+  (await poster('/api/animateur/main-libre', { valeur: false }).then((r) => r.json())).laMainEstLibre === false);
+verifier('personne n’a la main au moment de fermer', (await etatDe()).mainA === null);
+
+// Tant que personne ne l'a prise, personne ne pilote — c'est ce qui evite que
+// le premier a cliquer emporte l'ecran sans l'avoir demande.
+verifier('la main à prendre, personne ne pilote',
+  (await poster('/api/afficher', { documentId: identifiant, participant: camille })).status === 409);
+
+verifier('Camille prend la main',
+  (await poster('/api/main', { action: 'prendre', participant: camille })).status === 200);
+verifier('Bruno ne peut pas la lui prendre',
+  (await poster('/api/main', { action: 'prendre', participant: bruno })).status === 409);
+verifier('le refus dit qui a la main',
+  /Camille/.test((await poster('/api/main', { action: 'prendre', participant: bruno }).then((r) => r.json())).erreur || ''));
+
+// Celui qui a la main passe le controle de la main : le 404 qui suit vient du
+// document (non converti hors conteneur), pas du tour de parole.
+verifier('celui qui a la main n’est pas arrêté par le tour de parole',
+  (await poster('/api/afficher', { documentId: identifiant, participant: camille })).status !== 409);
+verifier('les autres sont arrêtés, sur l’affichage comme sur les pages',
+  (await poster('/api/afficher', { documentId: identifiant, participant: bruno })).status === 409
+  && (await poster('/api/page', { sens: 1, participant: bruno })).status === 409);
+
+// Deposer n'a jamais rien a voir avec la main.
+verifier('déposer reste permis à celui qui n’a pas la main',
+  (await depot(code, 'preparation.pdf', contenu, { prenom: 'Bruno' })).status === 200);
+
+verifier('Bruno ne peut pas rendre une main qu’il n’a pas',
+  (await poster('/api/main', { action: 'rendre', participant: bruno })).status === 409);
+verifier('Camille rend la main',
+  (await poster('/api/main', { action: 'rendre', participant: camille })).status === 200);
+verifier('Bruno peut alors la prendre',
+  (await poster('/api/main', { action: 'prendre', participant: bruno })).status === 200);
+
+// L'animateur passe outre : c'est tout l'objet de sa page.
+verifier('l’animateur donne la main à quelqu’un d’autre',
+  (await poster('/api/animateur/donner', { participant: camille }).then((r) => r.json())).mainA === camille);
+verifier('l’animateur ne donne pas la main à un inconnu',
+  (await poster('/api/animateur/donner', { participant: '00112233445566ff' })).status === 404);
+verifier('l’animateur peut reprendre la main à tout le monde',
+  (await poster('/api/animateur/donner', { participant: null }).then((r) => r.json())).mainA === null);
+
+verifier('la main redevenue libre, chacun pilote de nouveau',
+  (await poster('/api/animateur/main-libre', { valeur: true })).status === 200
+  && (await poster('/api/page', { sens: 1, participant: bruno })).status !== 409);
+
+// --- Retirer un document ----------------------------------------------------
+
+const aRetirer = (await depot(code, 'erreur de manip.pdf', contenu, { prenom: 'Bruno' }).then((r) => r.json()))
+  .documents[0].id;
+const dossierRetire = salleModule.dossierDuDocument(aRetirer);
+
+verifier('le document retiré existe bien sur le disque avant', fs.existsSync(dossierRetire));
+verifier('on ne retire rien sans le bon code',
+  (await poster('/api/animateur/retirer', { documentId: aRetirer }, codeFaux)).status === 403);
+verifier('le document est toujours là après ce refus', fs.existsSync(dossierRetire));
+verifier('l’animateur retire un document',
+  (await poster('/api/animateur/retirer', { documentId: aRetirer })).status === 200);
+verifier('le document a quitté l’état',
+  !(await etatDe()).documents.some((d) => d.id === aRetirer));
+// Le controle qui compte pour le §9 : retirer d'une liste ne serait pas retirer.
+verifier('et il a quitté le disque', !fs.existsSync(dossierRetire));
+verifier('retirer un document inconnu est refusé',
+  (await poster('/api/animateur/retirer', { documentId: '00112233445566ff' })).status === 404);
+
 // --- Ce qui ne doit pas sortir ---------------------------------------------
 
 const etat = await fetch(`${base}/api/etat`).then((r) => r.json());
@@ -354,6 +450,7 @@ verifier('un fichier qui n’est pas une page est refusé',
 // --- Les pages du service ---------------------------------------------------
 
 verifier('la page de l’écran est servie', await brute('/scene') === 200);
+verifier('la page de l’animateur est servie', await brute('/animateur') === 200);
 verifier('la page du téléphone est servie', await brute(`/salle/${code}`) === 200);
 verifier('une adresse de salle qui n’est pas un code est refusée',
   await brute('/salle/abcd') === 404);
@@ -387,7 +484,15 @@ const avant = fs.readdirSync(dossierReunion);
 verifier('la réunion a bien des fichiers sur le disque avant d’être terminée', avant.length > 0);
 
 const ancienCode = code;
-const nouveau = salleModule.nouvelleReunion();
+
+// Le controle qui compte le plus de toute cette section : un mauvais code ne
+// doit pas pouvoir mettre fin a la reunion de tout le monde.
+verifier('un mauvais code ne termine pas la réunion',
+  (await poster('/api/animateur/terminer', {}, codeFaux)).status === 403);
+verifier('la réunion est toujours là après ce refus',
+  (await etatDe()).documents.length > 0 && fs.readdirSync(dossierReunion).length > 0);
+
+const nouveau = (await poster('/api/animateur/terminer', {}).then((r) => r.json())).code;
 
 verifier('le disque est vidé pour de vrai', fs.readdirSync(dossierReunion).length === 0);
 verifier('un nouveau code est tiré', /^\d{4}$/.test(nouveau) && nouveau !== ancienCode, nouveau);

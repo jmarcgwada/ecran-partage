@@ -134,11 +134,16 @@
     border-top: 1px solid var(--trait);
     font-size: 2.2vh;
   }
+  /* Assez grand pour etre scanne sans se lever de sa chaise — a 8vh il fallait
+     s'approcher de l'ecran, ce qui manque l'objectif : un retardataire doit
+     pouvoir rejoindre la reunion sans l'interrompre.
+     Le prix est connu et assume : la barre etant sous le document, celui-ci
+     perd environ un septieme de sa hauteur. */
   #barre-qr {
-    width: 8vh; height: 8vh;
+    width: 13vh; height: 13vh;
     background: #fff;
-    padding: 0.5vh;
-    border-radius: 0.6vh;
+    padding: 0.7vh;
+    border-radius: 0.8vh;
     flex: none;
   }
   #barre-titre {

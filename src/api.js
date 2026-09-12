@@ -25,6 +25,8 @@ import { preparer, typeAccepte, extensionsAcceptees } from './documents.js';
 import {
   salle, etatPublic, codeJuste, reconnaitre, afficher, tournerPage,
   ouvrirDocument, documentPret, documentEnEchec, dossierDuDocument,
+  peutPiloter, prendreLaMain, rendreLaMain, donnerLaMain, reglerMainLibre,
+  retirerDocument, nouvelleReunion,
 } from './salle.js';
 import { ouvrirFlux } from './flux.js';
 
@@ -182,17 +184,10 @@ async function convertirEnSerie(acceptes) {
 // reglage « seul l'animateur distribue la parole » (§5) viendra avec la page
 // de l'animateur.
 async function mettreALEcran(req, res, url) {
-  if (!codeJuste(url.searchParams.get('code'))) {
-    await viderRequete(req);
-    return erreur(res, 403, 'Code de salle incorrect.', { fermer: true });
-  }
+  const corps = await corpsAvecCode(req, res, url);
+  if (!corps) return undefined;
 
-  let corps;
-  try {
-    corps = await lireCorpsJson(req);
-  } catch {
-    return erreur(res, 400, 'Demande illisible.');
-  }
+  if (!peutPiloter(corps.participant)) return refusDeLaMain(res);
 
   // afficher() refuse de lui-meme un document inconnu ou pas encore converti :
   // on ne veut pas d'un ecran noir parce qu'on a clique trop tot.
@@ -202,21 +197,93 @@ async function mettreALEcran(req, res, url) {
   return json(res, 200, { affichage: etatPublic().affichage });
 }
 
+// Le code de salle, puis le corps. Les deux memes gestes sur toutes les
+// commandes, y compris le viderRequete sans lequel un refus arrive au telephone
+// sous forme de coupure reseau.
+async function corpsAvecCode(req, res, url) {
+  if (!codeJuste(url.searchParams.get('code'))) {
+    await viderRequete(req);
+    erreur(res, 403, 'Code de salle incorrect.', { fermer: true });
+    return null;
+  }
+  try {
+    return await lireCorpsJson(req);
+  } catch {
+    erreur(res, 400, 'Demande illisible.');
+    return null;
+  }
+}
+
+function refusDeLaMain(res) {
+  const qui = salle.participants.find((p) => p.id === salle.mainA);
+  return erreur(res, 409, qui && qui.prenom
+    ? `${qui.prenom} a la main sur l’écran.`
+    : "Quelqu'un d'autre a la main sur l’écran.");
+}
+
+// Se faire connaitre en arrivant sur /salle, sans rien deposer. Sans cela, on
+// n'existerait qu'apres son premier envoi — et l'animateur ne pourrait pas
+// donner la main a quelqu'un qui n'a encore rien envoye, ce qui est pourtant le
+// cas de celui qui veut commenter le document d'un autre.
+async function rejoindre(req, res, url) {
+  const corps = await corpsAvecCode(req, res, url);
+  if (!corps) return undefined;
+  const participant = reconnaitre(corps.participant, corps.prenom);
+  return json(res, 200, { participant: participant.id });
+}
+
+// --- La main ----------------------------------------------------------------
+
+async function gererLaMain(req, res, url) {
+  const corps = await corpsAvecCode(req, res, url);
+  if (!corps) return undefined;
+
+  if (corps.action === 'rendre') {
+    if (!rendreLaMain(corps.participant)) return erreur(res, 409, "Vous n'avez pas la main.");
+    return json(res, 200, { mainA: salle.mainA });
+  }
+  if (!prendreLaMain(corps.participant)) return refusDeLaMain(res);
+  return json(res, 200, { mainA: salle.mainA });
+}
+
+// --- L'animateur ------------------------------------------------------------
+//
+// Aucune barriere de plus que le code de salle : le cahier ne veut pas de
+// comptes (§4), et l'animateur d'une reunion est celui qui ouvre cette page.
+// C'est assez pour empecher le bureau d'a cote, et cela n'a jamais pretendu
+// etre davantage.
+
+async function routerAnimateur(req, res, url, chemin) {
+  const corps = await corpsAvecCode(req, res, url);
+  if (!corps) return undefined;
+
+  if (chemin === '/api/animateur/main-libre') {
+    return json(res, 200, { laMainEstLibre: reglerMainLibre(corps.valeur) });
+  }
+  if (chemin === '/api/animateur/donner') {
+    if (!donnerLaMain(corps.participant)) return erreur(res, 404, 'Participant inconnu.');
+    return json(res, 200, { mainA: salle.mainA });
+  }
+  if (chemin === '/api/animateur/retirer') {
+    if (!retirerDocument(corps.documentId)) return erreur(res, 404, 'Document inconnu.');
+    return json(res, 200, { retire: true });
+  }
+  if (chemin === '/api/animateur/terminer') {
+    // Le geste du §9.1 : les fichiers quittent le disque, un nouveau code est
+    // tire, et l'ecran revient au QR code d'accueil.
+    return json(res, 200, { code: nouvelleReunion() });
+  }
+  return erreur(res, 404, 'Commande inconnue.');
+}
+
 // Tourner une page du document affiche. Le telephone envoie un SENS, pas un
 // numero : voir tournerPage() pour la raison, qui se sent des qu'on appuie deux
 // fois de suite sur « Suivante ».
 async function tourner(req, res, url) {
-  if (!codeJuste(url.searchParams.get('code'))) {
-    await viderRequete(req);
-    return erreur(res, 403, 'Code de salle incorrect.', { fermer: true });
-  }
+  const corps = await corpsAvecCode(req, res, url);
+  if (!corps) return undefined;
 
-  let corps;
-  try {
-    corps = await lireCorpsJson(req);
-  } catch {
-    return erreur(res, 400, 'Demande illisible.');
-  }
+  if (!peutPiloter(corps.participant)) return refusDeLaMain(res);
 
   const page = tournerPage(corps.sens);
   if (page === null) return erreur(res, 404, "Aucun document n'est affiché.");
@@ -244,11 +311,17 @@ export function creerGestionnaire() {
       if (chemin === '/api/depot' && req.method === 'POST') return await recevoirDepot(req, res, url);
       if (chemin === '/api/afficher' && req.method === 'POST') return await mettreALEcran(req, res, url);
       if (chemin === '/api/page' && req.method === 'POST') return await tourner(req, res, url);
+      if (chemin === '/api/rejoindre' && req.method === 'POST') return await rejoindre(req, res, url);
+      if (chemin === '/api/main' && req.method === 'POST') return await gererLaMain(req, res, url);
+      if (chemin.startsWith('/api/animateur/') && req.method === 'POST') {
+        return await routerAnimateur(req, res, url, chemin);
+      }
       if (chemin === '/api/qr.svg' && req.method === 'GET') return await servirQr(req, res);
 
       if (chemin.startsWith('/page/')) return servirPage(res, chemin);
 
       if (chemin === '/scene') return servirFichier(res, path.join(racinePublique, 'scene.html'));
+      if (chemin === '/animateur') return servirFichier(res, path.join(racinePublique, 'animateur.html'));
       if (/^\/salle\/\d{4}$/.test(chemin)) {
         return servirFichier(res, path.join(racinePublique, 'salle.html'));
       }

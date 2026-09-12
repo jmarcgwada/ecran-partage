@@ -1,9 +1,12 @@
 // ============================================================================
 // LE TELEPHONE D'UN PARTICIPANT
 //
-// Deposer un document, et voir la liste commune se remplir. En phase 1, le
-// dernier document pret prend l'ecran tout seul : il n'y a pas encore de tour
-// de parole ni de commandes de page, c'est la phase 2.
+// Deposer un document, voir la liste commune se remplir, remettre un document a
+// l'ecran et tourner ses pages — le telephone est la telecommande.
+//
+// Le dernier document converti prend l'ecran tout seul : deposer, c'est montrer.
+// Quand l'animateur ferme le tour de parole, seul celui qui a la main pilote ;
+// deposer, lui, reste toujours permis.
 // ============================================================================
 
 (function () {
@@ -31,6 +34,14 @@
   var zonePages = document.getElementById('pages');
   var boutonPrecedent = document.getElementById('precedent');
   var boutonSuivant = document.getElementById('suivant');
+  var sectionMain = document.getElementById('main-salle');
+  var mainEtat = document.getElementById('main-etat');
+  var boutonPrendre = document.getElementById('prendre');
+  var boutonRendre = document.getElementById('rendre');
+
+  // Vrai tant que la main est libre ou qu'elle est a nous. Sert a griser les
+  // commandes plutot qu'a laisser cliquer pour se faire refuser.
+  var jePilote = true;
 
   var limites = { tailleMaxMo: 50, fichiersMax: 10 };
   var mesDocuments = {};
@@ -54,6 +65,8 @@
   champPrenom.addEventListener('change', function () {
     retenir('ecr_prenom', champPrenom.value.trim());
     majIdentite();
+    // L'animateur doit voir le bon nom dans sa liste de participants.
+    seFaireConnaitre();
   });
 
   function majIdentite() {
@@ -194,6 +207,8 @@
     dernierEtat = etat;
     document.getElementById('code').textContent = etat.code;
     document.getElementById('nom-salle').textContent = etat.nomSalle || '';
+    // La main d'abord : elle décide si les commandes sont actives.
+    majMain(etat);
     majCommande(etat);
 
     if (etat.limites) limites = etat.limites;
@@ -251,6 +266,7 @@
         // chaque evenement du flux, et un ecouteur pose sur chaque bouton
         // serait repose des dizaines de fois dans une reunion.
         action.setAttribute('data-id', doc.id);
+        action.disabled = !jePilote;
         affichables += 1;
       } else {
         action = document.createElement('div');
@@ -267,6 +283,74 @@
     listeAide.hidden = affichables === 0;
   }
 
+  // --- La main --------------------------------------------------------------
+
+  function moi() {
+    return retenu('ecr_participant');
+  }
+
+  // Se faire connaître en arrivant, sans rien déposer : sinon on n'existerait
+  // qu'après son premier envoi, et l'animateur ne pourrait pas donner la main à
+  // quelqu'un qui veut commenter le document d'un autre.
+  function seFaireConnaitre() {
+    var requete = new XMLHttpRequest();
+    requete.open('POST', '/api/rejoindre?code=' + encodeURIComponent(code));
+    requete.setRequestHeader('content-type', 'application/json');
+    requete.onload = function () {
+      if (requete.status !== 200) return;
+      try {
+        var reponse = JSON.parse(requete.responseText);
+        if (reponse.participant) retenir('ecr_participant', reponse.participant);
+        if (dernierEtat) appliquer(dernierEtat);   // « (vous) » et l'état de la main
+      } catch (err) { /* on repassera au prochain envoi */ }
+    };
+    requete.send(JSON.stringify({ participant: moi(), prenom: champPrenom.value.trim() }));
+  }
+
+  function majMain(etat) {
+    // Main libre : la rubrique entière disparaît. Un bouton « Prendre la main »
+    // qui ne sert à rien est un bouton sur lequel on appuie quand même.
+    if (etat.laMainEstLibre) {
+      sectionMain.hidden = true;
+      jePilote = true;
+      return;
+    }
+
+    sectionMain.hidden = false;
+    var aMoi = !!(etat.mainA && etat.mainA === moi());
+    jePilote = aMoi;
+
+    var porteur = null;
+    for (var i = 0; i < (etat.participants || []).length; i++) {
+      if (etat.participants[i].id === etat.mainA) porteur = etat.participants[i];
+    }
+
+    if (aMoi) mainEtat.textContent = 'Vous avez la main sur l’écran.';
+    else if (porteur) {
+      mainEtat.textContent = (porteur.prenom || 'Quelqu’un') + ' a la main sur l’écran.';
+    } else mainEtat.textContent = 'Personne n’a la main. À prendre.';
+
+    boutonPrendre.hidden = aMoi || !!etat.mainA;
+    boutonRendre.hidden = !aMoi;
+  }
+
+  function commanderLaMain(action) {
+    var requete = new XMLHttpRequest();
+    requete.open('POST', '/api/main?code=' + encodeURIComponent(code));
+    requete.setRequestHeader('content-type', 'application/json');
+    requete.onload = function () {
+      if (requete.status === 200) return dire('', '');
+      var reponse = {};
+      try { reponse = JSON.parse(requete.responseText); } catch (err) { /* défaut */ }
+      dire(reponse.erreur || 'Impossible pour l’instant.', 'erreur');
+    };
+    requete.onerror = function () { dire('Connexion interrompue.', 'erreur'); };
+    requete.send(JSON.stringify({ action: action, participant: moi() }));
+  }
+
+  boutonPrendre.addEventListener('click', function () { commanderLaMain('prendre'); });
+  boutonRendre.addEventListener('click', function () { commanderLaMain('rendre'); });
+
   // --- La télécommande ------------------------------------------------------
 
   function majCommande(etat) {
@@ -282,8 +366,10 @@
     // disparaissent plutôt que de rester grisés sans qu'on sache pourquoi.
     zonePages.hidden = a.nbPages < 2;
     commandePage.textContent = (a.page + 1) + ' / ' + a.nbPages;
-    boutonPrecedent.disabled = a.page <= 0;
-    boutonSuivant.disabled = a.page >= a.nbPages - 1;
+    // Grisés plutôt que muets quand quelqu'un d'autre a la main : on voit tout
+    // de suite que ce n'est pas à soi de piloter.
+    boutonPrecedent.disabled = !jePilote || a.page <= 0;
+    boutonSuivant.disabled = !jePilote || a.page >= a.nbPages - 1;
   }
 
   function tourner(sens) {
@@ -308,7 +394,7 @@
     // c'est VOULU. Le serveur tient le compte des pages, deux appuis rapides
     // avancent donc bien de deux pages — c'est pour cela qu'on lui envoie un
     // sens plutôt qu'un numéro. L'écran, lui, sera informé par le flux.
-    requete.send(JSON.stringify({ sens: sens }));
+    requete.send(JSON.stringify({ sens: sens, participant: moi() }));
   }
 
   boutonPrecedent.addEventListener('click', function () { tourner(-1); });
@@ -345,7 +431,7 @@
 
     // L'écran bascule tout seul : c'est le flux qui l'en informera, pas cette
     // réponse. Ici on n'attend qu'un accusé de réception.
-    requete.send(JSON.stringify({ documentId: id }));
+    requete.send(JSON.stringify({ documentId: id, participant: moi() }));
   }
 
   // Le meme flux que l'ecran de la salle : la liste se remplit sous les yeux
@@ -361,4 +447,6 @@
     try { appliquer(JSON.parse(amorce.responseText)); } catch (err) { /* le flux suivra */ }
   };
   amorce.send();
+
+  seFaireConnaitre();
 }());

@@ -28,6 +28,15 @@
     </div>
   </section>
 
+  <!-- Repliee quand la main est libre, c'est-a-dire la plupart du temps : un
+       bouton « Prendre la main » n'a de sens que si la main se prend. -->
+  <section id="main-salle" hidden>
+    <h2>La main</h2>
+    <p id="main-etat"></p>
+    <button type="button" class="bouton" id="prendre" hidden>Prendre la main</button>
+    <button type="button" class="bouton secondaire" id="rendre" hidden>Rendre la main</button>
+  </section>
+
   <!-- Un telephone = une personne : le prenom se saisit une fois et ce
        navigateur le retient. Il n'y a pas d'utilisateur a commuter — si le
        prenom est faux, on corrige le champ. -->
