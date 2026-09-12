@@ -18,12 +18,12 @@ import { promisify } from 'node:util';
 
 import { reglages, dossierReunion, tailleMaxOctets } from './config.js';
 import {
-  json, erreur, viderRequete, servirFichier, servirStatique,
+  json, erreur, viderRequete, servirFichier, servirStatique, lireCorpsJson,
 } from './http.js';
 import { lireMultipart } from './multipart.js';
 import { preparer, typeAccepte, extensionsAcceptees } from './documents.js';
 import {
-  salle, etatPublic, codeJuste, reconnaitre,
+  salle, etatPublic, codeJuste, reconnaitre, afficher,
   ouvrirDocument, documentPret, documentEnEchec, dossierDuDocument,
 } from './salle.js';
 import { ouvrirFlux } from './flux.js';
@@ -170,6 +170,38 @@ async function convertirEnSerie(acceptes) {
   }
 }
 
+// --- Remettre un document a l'ecran -----------------------------------------
+//
+// Un document depose reste disponible toute la reunion : y revenir ne coute
+// aucun renvoi de fichier, juste une ligne sur le reseau. C'est la difference
+// entre « je vous remontre le budget » et « attendez, je le renvoie ».
+//
+// Le code de salle est exige, comme pour le depot : changer ce que tout le
+// monde voit est un geste au moins aussi engageant que d'ajouter un document.
+// En revanche la main est libre — n'importe quel participant peut le faire. Le
+// reglage « seul l'animateur distribue la parole » (§5) viendra avec la page
+// de l'animateur.
+async function mettreALEcran(req, res, url) {
+  if (!codeJuste(url.searchParams.get('code'))) {
+    await viderRequete(req);
+    return erreur(res, 403, 'Code de salle incorrect.', { fermer: true });
+  }
+
+  let corps;
+  try {
+    corps = await lireCorpsJson(req);
+  } catch {
+    return erreur(res, 400, 'Demande illisible.');
+  }
+
+  // afficher() refuse de lui-meme un document inconnu ou pas encore converti :
+  // on ne veut pas d'un ecran noir parce qu'on a clique trop tot.
+  if (!afficher(corps.documentId, corps.page)) {
+    return erreur(res, 404, "Ce document n'est pas affichable.");
+  }
+  return json(res, 200, { affichage: etatPublic().affichage });
+}
+
 // --- Aiguillage -------------------------------------------------------------
 
 export function creerGestionnaire() {
@@ -189,6 +221,7 @@ export function creerGestionnaire() {
         });
       }
       if (chemin === '/api/depot' && req.method === 'POST') return await recevoirDepot(req, res, url);
+      if (chemin === '/api/afficher' && req.method === 'POST') return await mettreALEcran(req, res, url);
       if (chemin === '/api/qr.svg' && req.method === 'GET') return await servirQr(req, res);
 
       if (chemin.startsWith('/page/')) return servirPage(res, chemin);

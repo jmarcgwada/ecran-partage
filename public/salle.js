@@ -23,9 +23,13 @@
   var message = document.getElementById('message');
   var liste = document.getElementById('liste');
   var listeVide = document.getElementById('liste-vide');
+  var listeAide = document.getElementById('liste-aide');
+  var boutonChanger = document.getElementById('changer');
+  var ligneRetenu = document.getElementById('retenu');
 
   var limites = { tailleMaxMo: 50, fichiersMax: 10 };
   var mesDocuments = {};
+  var dernierEtat = null;
 
   // --- Ce qu'on retient d'une fois sur l'autre -----------------------------
   // Le prenom et l'identifiant de participant, dans ce navigateur seulement.
@@ -37,11 +41,43 @@
   function retenir(cle, valeur) {
     try { localStorage.setItem(cle, valeur); } catch (err) { /* navigation privee */ }
   }
+  function oublier(cle) {
+    try { localStorage.removeItem(cle); } catch (err) { /* idem */ }
+  }
 
   champPrenom.value = retenu('ecr_prenom');
   champPrenom.addEventListener('change', function () {
     retenir('ecr_prenom', champPrenom.value.trim());
+    majIdentite();
   });
+
+  function majIdentite() {
+    // « Connu » veut dire : ce telephone a deja servi a quelqu'un. Le prenom
+    // seul ne suffit pas comme critere — on peut avoir depose sans se nommer,
+    // et il faut tout de meme pouvoir passer la main.
+    var connu = !!(champPrenom.value.trim() || retenu('ecr_participant'));
+    boutonChanger.hidden = !connu;
+    ligneRetenu.textContent = connu
+      ? 'Ce téléphone se souvient de vous d’une réunion à l’autre.'
+      : '';
+  }
+
+  // Passer le telephone a quelqu'un d'autre. Tout se joue DANS CE NAVIGATEUR :
+  // le serveur n'a rien a oublier, il ne connait personne. Les documents deja
+  // envoyes gardent le prenom sous lequel ils l'ont ete — ils ont bien ete
+  // envoyes par quelqu'un d'autre, les renommer serait un mensonge.
+  boutonChanger.addEventListener('click', function () {
+    oublier('ecr_prenom');
+    oublier('ecr_participant');
+    champPrenom.value = '';
+    mesDocuments = {};
+    majIdentite();
+    if (dernierEtat) appliquer(dernierEtat);   // la liste perd ses « (vous) »
+    champPrenom.focus();
+    dire('À vous. Saisissez votre prénom, puis envoyez votre document.', 'bien');
+  });
+
+  majIdentite();
 
   // --- Le choix des fichiers ------------------------------------------------
 
@@ -120,6 +156,7 @@
       }
 
       if (reponse.participant) retenir('ecr_participant', reponse.participant);
+      majIdentite();   // le téléphone connaît quelqu'un : on peut passer la main
       for (var k = 0; k < (reponse.documents || []).length; k++) {
         mesDocuments[reponse.documents[k].id] = true;
       }
@@ -168,6 +205,9 @@
   };
 
   function appliquer(etat) {
+    // Retenu pour pouvoir redessiner la liste sans attendre le flux — au
+    // changement d'utilisateur, par exemple.
+    dernierEtat = etat;
     document.getElementById('code').textContent = etat.code;
     document.getElementById('nom-salle').textContent = etat.nomSalle || '';
 
@@ -189,6 +229,7 @@
     var documents = etat.documents || [];
     listeVide.style.display = documents.length ? 'none' : 'block';
     liste.innerHTML = '';
+    var affichables = 0;
 
     for (var i = 0; i < documents.length; i++) {
       var doc = documents[i];
@@ -212,15 +253,67 @@
         titre.appendChild(qui);
       }
 
-      var etatLigne = document.createElement('div');
-      etatLigne.className = 'etat' + (doc.etat === 'erreur' ? ' erreur' : '');
-      etatLigne.textContent = aLEcran ? 'à l’écran' : (etats[doc.etat] || '');
-      etatLigne.title = doc.erreur || '';
+      // Un document pret et absent de l'ecran se remet d'un bouton. C'est tout
+      // l'interet de garder la liste : on revient sur le budget de tout a
+      // l'heure sans le renvoyer depuis son telephone.
+      var action;
+      if (!aLEcran && doc.etat === 'pret') {
+        action = document.createElement('button');
+        action.type = 'button';
+        action.className = 'afficher';
+        action.textContent = 'Afficher';
+        // L'identifiant voyage sur le bouton : la liste se reconstruit a
+        // chaque evenement du flux, et un ecouteur pose sur chaque bouton
+        // serait repose des dizaines de fois dans une reunion.
+        action.setAttribute('data-id', doc.id);
+        affichables += 1;
+      } else {
+        action = document.createElement('div');
+        action.className = 'etat' + (doc.etat === 'erreur' ? ' erreur' : '');
+        action.textContent = aLEcran ? 'à l’écran' : (etats[doc.etat] || '');
+        action.title = doc.erreur || '';
+      }
 
       ligne.appendChild(titre);
-      ligne.appendChild(etatLigne);
+      ligne.appendChild(action);
       liste.appendChild(ligne);
     }
+
+    listeAide.hidden = affichables === 0;
+  }
+
+  // Un seul ecouteur, pose une fois pour toutes sur la liste.
+  liste.addEventListener('click', function (evenement) {
+    var cible = evenement.target;
+    if (!cible || cible.tagName !== 'BUTTON') return;
+    var id = cible.getAttribute('data-id');
+    if (id) remettreALEcran(id, cible);
+  });
+
+  function remettreALEcran(id, bouton) {
+    bouton.disabled = true;
+    var requete = new XMLHttpRequest();
+    requete.open('POST', '/api/afficher?code=' + encodeURIComponent(code));
+    requete.setRequestHeader('content-type', 'application/json');
+
+    requete.onload = function () {
+      bouton.disabled = false;
+      if (requete.status === 200) return dire('', '');
+      if (requete.status === 403) {
+        return dire('Code de salle incorrect. Rescannez le QR code affiché sur l’écran.', 'erreur');
+      }
+      var reponse = {};
+      try { reponse = JSON.parse(requete.responseText); } catch (err) { /* message par défaut */ }
+      dire(reponse.erreur || 'Impossible d’afficher ce document.', 'erreur');
+    };
+    requete.onerror = function () {
+      bouton.disabled = false;
+      dire('Connexion interrompue. Êtes-vous toujours sur le réseau de la salle ?', 'erreur');
+    };
+
+    // L'écran bascule tout seul : c'est le flux qui l'en informera, pas cette
+    // réponse. Ici on n'attend qu'un accusé de réception.
+    requete.send(JSON.stringify({ documentId: id }));
   }
 
   // Le meme flux que l'ecran de la salle : la liste se remplit sous les yeux

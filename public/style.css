@@ -159,6 +159,25 @@ ul.documents .etat.erreur { color: var(--rouge); }
 ul.documents li.affiche { border-color: var(--accent); }
 ul.documents li.affiche .etat { color: var(--accent); }
 
+/* Remettre un document à l'écran. Assez large pour le pouce — la cible
+   recommandée est d'environ 44 points de côté, et une ligne de liste est
+   exactement l'endroit où l'on rate son geste. */
+ul.documents button.afficher {
+  flex: none;
+  padding: 0.6rem 1rem;
+  min-height: 44px;
+  border: 1px solid var(--accent);
+  border-radius: 0.55rem;
+  background: transparent;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-appearance: none;
+}
+ul.documents button.afficher:disabled { opacity: 0.45; }
+
 .vide { color: var(--discret); font-size: 0.95rem; }
 
 footer {

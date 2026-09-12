@@ -215,6 +215,58 @@ if (!outils) {
   verifier('l’image n’est pas vide', (await image.arrayBuffer()).byteLength > 1000);
 }
 
+// --- Remettre un document a l'ecran -----------------------------------------
+//
+// Ce qui doit tenir : le code de salle protege ce geste comme il protege le
+// depot — changer ce que toute la salle voit n'est pas moins engageant que
+// d'ajouter un document.
+
+const afficherAvec = (codeUtilise, documentId, page) =>
+  fetch(`${base}/api/afficher?code=${encodeURIComponent(codeUtilise)}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ documentId, page }),
+  });
+
+const codeFaux = String((Number(code) + 1) % 10000).padStart(4, '0');
+
+verifier('sans le bon code, on ne remet rien à l’écran',
+  (await afficherAvec(codeFaux, identifiant)).status === 403);
+verifier('le serveur répond encore après ce refus',
+  (await fetch(`${base}/api/sante`)).ok);
+verifier('un document inconnu n’est pas affichable',
+  (await afficherAvec(code, '00112233445566ff')).status === 404);
+
+if (!outils) {
+  ignore('un document déjà déposé se remet à l’écran', 'aucune page convertie hors conteneur');
+  // Le pendant du controle ci-dessus : ce qui n'a pas pu etre converti ne doit
+  // pas pouvoir etre affiche — sinon l'ecran passe au noir en pleine reunion.
+  verifier('un document illisible n’est pas affichable',
+    (await afficherAvec(code, identifiant)).status === 404);
+} else {
+  // Un deuxieme document prend l'ecran tout seul (phase 1), puis on revient
+  // sur le premier SANS le renvoyer : c'est tout l'objet de la manoeuvre.
+  const second = await depot(code, 'le suivant.pdf', contenu, { prenom: 'Bruno' });
+  const idSecond = (await second.json()).documents[0].id;
+  const prisParLeSecond = await flux.attendre((e) => e.affichage.documentId === idSecond, 60_000);
+  verifier('le document suivant prend l’écran', prisParLeSecond !== null);
+
+  const retour = await afficherAvec(code, identifiant);
+  verifier('un document déjà déposé se remet à l’écran', retour.status === 200, String(retour.status));
+  verifier('la réponse dit ce qui est désormais affiché',
+    (await retour.json()).affichage.documentId === identifiant);
+  verifier('l’écran est prévenu du retour en arrière',
+    (await flux.attendre((e) => e.affichage.documentId === identifiant, 5000)) !== null);
+
+  // La page demandee est retenue, et bornee : une page 99 sur un document
+  // d'une page ne doit pas laisser l'ecran sans image.
+  await afficherAvec(code, identifiant, 99);
+  const borne = await fetch(`${base}/api/etat`).then((r) => r.json());
+  verifier('une page hors des limites est ramenée dans le document',
+    borne.affichage.page === borne.affichage.nbPages - 1 && !!borne.affichage.image,
+    `page ${borne.affichage.page} sur ${borne.affichage.nbPages}`);
+}
+
 // --- Ce qui ne doit pas sortir ---------------------------------------------
 
 const etat = await fetch(`${base}/api/etat`).then((r) => r.json());

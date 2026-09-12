@@ -15,10 +15,19 @@
 </header>
 
 <main>
+  <!-- L'identite d'abord, et dans sa propre rubrique : dans la version
+       precedente le prenom etait perdu en haut du formulaire d'envoi, et rien
+       ne laissait deviner que c'etait LA qu'on changeait d'utilisateur. -->
   <section>
-    <h2>Votre document</h2>
-    <label for="prenom">Votre prénom (facultatif)</label>
+    <h2>Vous</h2>
+    <label for="prenom">Votre prénom — il s’affiche à côté de vos documents (facultatif)</label>
     <input type="text" id="prenom" autocomplete="given-name" placeholder="Camille" maxlength="40">
+    <p class="vide" id="retenu"></p>
+    <button type="button" class="bouton secondaire" id="changer" hidden>Ce n’est pas moi — changer d’utilisateur</button>
+  </section>
+
+  <section>
+    <h2>Envoyer un document</h2>
 
     <!-- Pas de <form> : un formulaire HTML invalide n'emet pas l'evenement
          submit, et le bouton ne fait alors rien, sans un mot. On verifie
@@ -36,6 +45,10 @@
     <h2>Documents de la réunion</h2>
     <ul class="documents" id="liste"></ul>
     <p class="vide" id="liste-vide">Rien n’a encore été envoyé.</p>
+    <p class="vide" id="liste-aide" hidden>
+      Appuyez sur « Afficher » pour remettre un document à l’écran. Inutile de
+      le renvoyer : il reste disponible jusqu’à la fin de la réunion.
+    </p>
   </section>
 </main>
 
