@@ -21,7 +21,7 @@ réunion : un participant dépose, le document apparaît.
 | Phase | État |
 | --- | --- |
 | 1 — l'écran affiche quelque chose | **fait** |
-| 2 — le tour de parole | *entamée* — « Afficher » fait, les commandes de page restent |
+| 2 — le tour de parole | **fait**, sauf la page `/animateur` et son réglage |
 | 3 — la fin de réunion (bouton « Terminer ») | *partiellement* — voir ci-dessous |
 | 4 — le confort (vidéos, mode sombre, télécommande) | à faire |
 
@@ -38,17 +38,21 @@ réunion : un participant dépose, le document apparaît.
   qu'on ne croie pas à une panne ;
 - **« Afficher »** remet à l'écran un document déjà déposé, sans le renvoyer :
   il reste disponible jusqu'à la fin de la réunion ;
-- **« Ce n'est pas moi »** passe le téléphone à quelqu'un d'autre — le prénom
-  et l'identité retenus dans ce navigateur sont oubliés.
+- **« Précédente / Suivante »** font défiler les pages depuis le téléphone, qui
+  devient la télécommande.
+
+### Un téléphone = une personne
+
+Chacun scanne avec son propre téléphone et saisit son prénom une fois ; ce
+navigateur le retient d'une réunion à l'autre. **Il n'y a pas d'utilisateur à
+commuter** : quand le tour de Bruno vient, Bruno envoie depuis son téléphone. Si
+un prénom est faux, on corrige le champ.
 
 ### Ce que ça ne fait PAS encore
 
-- **Pas de commandes de page** : seule la première page d'un document s'affiche.
-  Le modèle de données porte déjà le numéro de page et `/api/afficher` l'accepte
-  déjà — il ne reste que les boutons à poser.
 - **Pas de tour de parole réglé** : la main est libre, n'importe qui peut
-  afficher n'importe quel document. Le réglage « seul l'animateur distribue la
-  parole » (§5) viendra avec la page `/animateur`.
+  afficher n'importe quel document et tourner les pages. Le réglage « seul
+  l'animateur distribue la parole » (§5) viendra avec la page `/animateur`.
 - **Pas de bouton « Terminer »**.
 
 ### Un écart assumé au découpage en phases
@@ -103,6 +107,7 @@ navigateur** et non un protocole de diffusion (§3.1), les documents deviennent
 | `/` | celui qui installe l'écran : un lien vers `/scene`, rien d'autre |
 | `/api/etat` | l'état public, pour déboguer d'un coup de `curl` |
 | `/api/afficher` | remettre un document à l'écran — `POST`, code de salle exigé |
+| `/api/page` | tourner une page — `POST {sens:-1\|1}`, code de salle exigé |
 | `/api/flux` | le flux d'évènements |
 | `/api/sante` | pour le contrôle de santé du conteneur |
 
@@ -237,5 +242,5 @@ d'attaquer la phase 2.
 3. **Un vrai `.pptx` déposé depuis un vrai téléphone**, pour confirmer les
    mesures ci-dessus hors laboratoire.
 
-~~La conversion dans le conteneur~~ — **fait** : le banc passe ses 47 contrôles
+~~La conversion dans le conteneur~~ — **fait** : le banc passe ses 56 contrôles
 dans le conteneur, sans aucun `IGNORE`.
