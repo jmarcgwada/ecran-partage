@@ -107,6 +107,20 @@
      dans le blanc, et la barre mangeait le bas de la page. */
   #vue { display: none; height: 100%; flex-direction: column; }
 
+  /* L'attenuation du §11 : un document blanc sur un videoprojecteur, lumiere
+     eteinte, eblouit. On attenue l'IMAGE, pas la barre — le nom du document et
+     le code doivent rester lisibles. On l'attenue plutot que de l'inverser :
+     inverser rendrait le texte confortable et massacrerait la moindre photo. */
+  #page, #video { filter: brightness(var(--luminosite, 1)); }
+
+  #video {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    display: none;
+    background: #000;
+  }
+
   #page {
     flex: 1;
     /* Sans min-height, un element flexible refuse de descendre sous la taille
@@ -223,6 +237,11 @@
 
 <div id="vue">
   <img id="page" alt="">
+  <!-- playsinline pour les boitiers Android, qui sinon ouvrent un lecteur
+       plein ecran a eux et perdent la barre. Les controles restent visibles :
+       si le navigateur de l'ecran refuse de demarrer sur ordre du serveur,
+       quelqu'un doit pouvoir appuyer sur Lire a la main. -->
+  <video id="video" controls playsinline preload="metadata"></video>
   <div id="barre">
     <img id="barre-qr" alt="">
     <div id="barre-titre"></div>
@@ -241,6 +260,7 @@
   var accueil = document.getElementById('accueil');
   var vue = document.getElementById('vue');
   var page = document.getElementById('page');
+  var video = document.getElementById('video');
   var qr = document.getElementById('qr');
   var qrSecours = document.getElementById('qr-secours');
   var barreQr = document.getElementById('barre-qr');
@@ -249,6 +269,9 @@
 
   var codeAffiche = null;
   var imageAffichee = null;
+  var videoAffichee = null;
+  var monCode = null;            // le code de la salle, pour la télécommande
+  var monParticipant = null;     // l'écran est un participant comme un autre
 
   // --- Le QR code ----------------------------------------------------------
   // Recharge uniquement quand le code change : sans cette garde, chaque
@@ -266,6 +289,10 @@
     // d'adresse publique, que seul le serveur connait. On la redemande a
     // chaque changement de code — c'est-a-dire une fois par reunion.
     demanderAdresse();
+    // Nouvelle reunion, nouvelle liste de participants : l'ecran doit s'y
+    // reinscrire, sans quoi sa telecommande serait refusee au premier tour de
+    // parole ferme.
+    seFaireConnaitre();
   }
 
   function demanderAdresse() {
@@ -292,6 +319,10 @@
   // --- L'affichage ---------------------------------------------------------
 
   function appliquer(etat) {
+    // AVANT poserQr : celui-ci déclenche l'inscription de l'écran, qui a besoin
+    // du code pour parler au serveur. L'ordre n'est pas cosmétique.
+    monCode = etat.code;
+
     document.getElementById('nom-salle').textContent = etat.nomSalle || '';
     document.getElementById('code-grand').textContent = etat.code;
     document.getElementById('barre-code').textContent = etat.code;
@@ -300,14 +331,12 @@
     if (etat.reception) avisReception.className = 'visible';
     else avisReception.className = '';
 
+    // L'attenuation, appliquee a l'image seule : la barre reste lisible.
+    document.documentElement.style.setProperty(
+      '--luminosite', ((etat.luminosite === undefined ? 100 : etat.luminosite) / 100).toFixed(2));
+
     var a = etat.affichage;
-    if (a && a.image) {
-      // Ne reassigner src que si l'image change vraiment : sinon l'ecran
-      // clignote a chaque evenement recu.
-      if (a.image !== imageAffichee) {
-        imageAffichee = a.image;
-        page.src = a.image;
-      }
+    if (a && (a.image || a.video)) {
       var titre = '<b>' + echapper(a.nom || '') + '</b>';
       if (a.prenom) titre += ' <span>— ' + echapper(a.prenom) + '</span>';
       document.getElementById('barre-titre').innerHTML = titre;
@@ -316,10 +345,53 @@
       accueil.style.display = 'none';
       vue.style.display = 'flex';   // et non 'block' : la barre se range sous la page
     } else {
-      imageAffichee = null;
-      page.removeAttribute('src');
+      document.getElementById('barre-page').textContent = '';
       accueil.style.display = 'flex';
       vue.style.display = 'none';
+    }
+
+    if (a && a.video) {
+      page.style.display = 'none';
+      video.style.display = 'block';
+      // Ne reassigner src que si la video change vraiment : sinon chaque
+      // evenement du flux la ferait repartir du debut.
+      if (a.video !== videoAffichee) {
+        videoAffichee = a.video;
+        imageAffichee = null;
+        page.removeAttribute('src');
+        video.src = a.video;
+      }
+      // La lecture suit l'etat de la salle, et non l'inverse : c'est un
+      // telephone qui decide, pas l'ecran.
+      if (a.lecture && video.paused) {
+        // Un navigateur peut refuser de demarrer sans geste humain — les
+        // controles restent la pour ce cas. Le refus ne doit rien casser.
+        var essai = video.play();
+        if (essai && essai.catch) essai.catch(function () { /* controles visibles */ });
+      } else if (!a.lecture && !video.paused) {
+        video.pause();
+      }
+    } else {
+      if (videoAffichee) {
+        videoAffichee = null;
+        video.pause();
+        video.removeAttribute('src');
+        video.load();          // sinon le fichier continue d'etre telecharge
+      }
+      video.style.display = 'none';
+      page.style.display = 'block';
+
+      if (a && a.image) {
+        // Ne reassigner src que si l'image change vraiment : sinon l'ecran
+        // clignote a chaque evenement recu.
+        if (a.image !== imageAffichee) {
+          imageAffichee = a.image;
+          page.src = a.image;
+        }
+      } else {
+        imageAffichee = null;
+        page.removeAttribute('src');
+      }
     }
   }
 
@@ -355,6 +427,58 @@
   // Pas d'appel a /api/etat au demarrage : le flux envoie l'etat entier des
   // qu'il s'ouvre. Une requete de moins, et surtout pas de course entre deux
   // sources qui diraient la meme chose.
+
+  // --- La télécommande au clavier ------------------------------------------
+  //
+  // Pour l'ecran branche a un mini-PC ou a un portable : les fleches tournent
+  // les pages, Echap redonne le QR code d'accueil.
+  //
+  // L'ecran se fait connaitre comme un PARTICIPANT nomme « Écran ». C'est ce
+  // qui lui permet d'obeir au meme tour de parole que les telephones : quand
+  // la main n'est pas libre, l'animateur peut la lui donner comme a n'importe
+  // qui. Sans cela il aurait fallu lui inventer un passe-droit, et un
+  // passe-droit qu'on peut envoyer soi-meme n'en est pas un.
+
+  function seFaireConnaitre() {
+    if (!monCode) return;
+    var requete = new XMLHttpRequest();
+    requete.open('POST', '/api/rejoindre?code=' + encodeURIComponent(monCode));
+    requete.setRequestHeader('content-type', 'application/json');
+    requete.onload = function () {
+      try {
+        var reponse = JSON.parse(requete.responseText);
+        if (!reponse.participant) return;
+        monParticipant = reponse.participant;
+        try { localStorage.setItem('ecr_scene', monParticipant); } catch (err) { /* tant pis */ }
+      } catch (err) { /* la telecommande sera refusee, sans gravite */ }
+    };
+    var connu = '';
+    try { connu = localStorage.getItem('ecr_scene') || ''; } catch (err) { connu = ''; }
+    requete.send(JSON.stringify({ participant: connu, prenom: 'Écran' }));
+  }
+
+  function commander(chemin, corps) {
+    if (!monCode) return;
+    corps.participant = monParticipant;
+    var requete = new XMLHttpRequest();
+    requete.open('POST', chemin + '?code=' + encodeURIComponent(monCode));
+    requete.setRequestHeader('content-type', 'application/json');
+    requete.send(JSON.stringify(corps));
+  }
+
+  document.addEventListener('keydown', function (evenement) {
+    var touche = evenement.key;
+    if (touche === 'ArrowRight' || touche === 'PageDown' || touche === ' ') {
+      commander('/api/page', { sens: 1 });
+    } else if (touche === 'ArrowLeft' || touche === 'PageUp') {
+      commander('/api/page', { sens: -1 });
+    } else if (touche === 'Escape') {
+      commander('/api/animateur/accueil', {});
+    } else {
+      return;   // tout le reste appartient au navigateur, y compris F11
+    }
+    evenement.preventDefault();
+  });
 
   // --- La mise en veille ---------------------------------------------------
   // Un ecran qui s'eteint au milieu d'une reunion passe pour une panne. Le

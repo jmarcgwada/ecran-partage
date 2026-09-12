@@ -16,17 +16,20 @@ import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
-import { reglages, dossierReunion, tailleMaxOctets } from './config.js';
+import {
+  reglages, dossierReunion, tailleMaxOctets, tailleMaxVideoOctets, enregistrerReglages,
+} from './config.js';
 import {
   json, erreur, viderRequete, servirFichier, servirStatique, lireCorpsJson,
 } from './http.js';
 import { lireMultipart } from './multipart.js';
-import { preparer, typeAccepte, extensionsAcceptees } from './documents.js';
+import { preparer, typeAccepte, estUneVideo, extensionsAcceptees } from './documents.js';
 import {
   salle, etatPublic, codeJuste, reconnaitre, afficher, tournerPage,
   ouvrirDocument, documentPret, documentEnEchec, dossierDuDocument,
   peutPiloter, prendreLaMain, rendreLaMain, donnerLaMain, reglerMainLibre,
-  retirerDocument, nouvelleReunion,
+  retirerDocument, nouvelleReunion, documentPar, reglerLecture, signalerChangement,
+  revenirAAccueil,
 } from './salle.js';
 import { ouvrirFlux } from './flux.js';
 
@@ -82,6 +85,73 @@ function servirPage(res, chemin) {
   servirFichier(res, fichier, { cache: 'private, max-age=3600' });
 }
 
+// --- Les videos -------------------------------------------------------------
+//
+// Servies TELLES QUELLES (§3.2) : aucune conversion, aucun ffmpeg dans l'image.
+// C'est le navigateur de l'ecran qui decode.
+//
+// Les requetes de plage sont indispensables, pas un raffinement : sans elles on
+// ne peut pas avancer dans une video, et certains navigateurs refusent meme de
+// commencer la lecture.
+
+const MIME_VIDEO = {
+  '.mp4': 'video/mp4',
+  '.m4v': 'video/x-m4v',
+  '.webm': 'video/webm',
+  '.ogv': 'video/ogg',
+  '.mov': 'video/quicktime',
+  '.mkv': 'video/x-matroska',
+};
+
+function servirVideo(req, res, chemin) {
+  const trouve = /^\/video\/([a-f0-9]{16})$/.exec(chemin);
+  if (!trouve) return erreur(res, 404, 'Vidéo inconnue.');
+
+  const document = documentPar(trouve[1]);
+  if (!document || !document.video) return erreur(res, 404, 'Vidéo inconnue.');
+
+  const fichier = path.join(dossierDuDocument(document.id), document.video);
+  let infos;
+  try {
+    infos = fs.statSync(fichier);
+  } catch {
+    return erreur(res, 404, 'Vidéo inconnue.');
+  }
+
+  const type = MIME_VIDEO[path.extname(document.video).toLowerCase()] || 'application/octet-stream';
+  const communs = { 'content-type': type, 'accept-ranges': 'bytes', 'cache-control': 'private, max-age=3600' };
+
+  const plage = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+  if (!plage || (!plage[1] && !plage[2])) {
+    res.writeHead(200, { ...communs, 'content-length': infos.size });
+    return fs.createReadStream(fichier).pipe(res);
+  }
+
+  let debut;
+  let fin;
+  if (!plage[1]) {
+    // « bytes=-500 » : les cinq cents DERNIERS octets. Forme rare mais licite,
+    // et l'oublier donne une lecture qui part a l'envers.
+    debut = Math.max(0, infos.size - Number(plage[2]));
+    fin = infos.size - 1;
+  } else {
+    debut = Number(plage[1]);
+    fin = plage[2] ? Math.min(Number(plage[2]), infos.size - 1) : infos.size - 1;
+  }
+
+  if (debut > fin || debut >= infos.size) {
+    res.writeHead(416, { 'content-range': `bytes */${infos.size}` });
+    return res.end();
+  }
+
+  res.writeHead(206, {
+    ...communs,
+    'content-length': fin - debut + 1,
+    'content-range': `bytes ${debut}-${fin}/${infos.size}`,
+  });
+  return fs.createReadStream(fichier, { start: debut, end: fin }).pipe(res);
+}
+
 // --- Le depot ---------------------------------------------------------------
 
 async function recevoirDepot(req, res, url) {
@@ -98,7 +168,10 @@ async function recevoirDepot(req, res, url) {
   let envoi;
   try {
     envoi = await lireMultipart(req, {
-      maxOctets: tailleMaxOctets(),
+      // Le plafond du LOT : la plus haute des deux limites, puisqu'on ne sait
+      // pas encore ce que l'envoi contient. Chaque fichier sera ensuite pese
+      // selon sa nature, un peu plus bas.
+      maxOctets: Math.max(tailleMaxOctets(), tailleMaxVideoOctets()),
       maxFichiers: reglages.limites.fichiersMax,
       dossier: recu,
     });
@@ -108,7 +181,8 @@ async function recevoirDepot(req, res, url) {
     const options = { fermer: !abouti };
     if (err.message === 'TROP_GROS') {
       return erreur(res, 413,
-        `Fichier trop volumineux (maximum ${reglages.limites.tailleMaxMo} Mo).`, options);
+        `Envoi trop volumineux (maximum ${reglages.limites.tailleMaxVideoMo} Mo au total, `
+        + `${reglages.limites.tailleMaxMo} Mo pour un document).`, options);
     }
     if (err.message === 'TROP_DE_FICHIERS') {
       return erreur(res, 413,
@@ -129,7 +203,19 @@ async function recevoirDepot(req, res, url) {
   const refuses = [];
   for (const fichier of envoi.fichiers) {
     if (!typeAccepte(fichier.nom)) {
-      refuses.push({ nom: fichier.nom, motif: 'Format non accepté' });
+      refuses.push({ nom: fichier.nom, motif: 'Format non accepté', statut: 415 });
+      fs.rmSync(fichier.chemin, { force: true });
+      continue;
+    }
+    // Deux limites, parce que deux natures : une video pese legitimement
+    // quarante fois un .pptx. Chaque fichier est pese selon la sienne.
+    const plafond = estUneVideo(fichier.nom) ? tailleMaxVideoOctets() : tailleMaxOctets();
+    if (fichier.taille > plafond) {
+      refuses.push({
+        nom: fichier.nom,
+        motif: `Dépasse ${Math.round(plafond / (1024 * 1024))} Mo`,
+        statut: 413,
+      });
       fs.rmSync(fichier.chemin, { force: true });
       continue;
     }
@@ -142,6 +228,16 @@ async function recevoirDepot(req, res, url) {
   }
 
   fs.rmSync(recu, { recursive: true, force: true });
+
+  // Rien n'est passe : le refus se dit franchement, avec son statut. Un envoi
+  // d'un seul fichier trop gros qui repondrait « 200, tout va bien, voici la
+  // liste de ce que j'ai refuse » serait une reponse de formulaire, pas une
+  // reponse a quelqu'un qui attend son document a l'ecran.
+  if (!acceptes.length) {
+    // Le motif garde sa casse : « dépasse 50 mo » se lit mal, et « Mo » est une
+    // unité, pas un mot.
+    return erreur(res, refuses[0].statut, `« ${refuses[0].nom} » — ${refuses[0].motif}.`);
+  }
 
   // On repond TOUT DE SUITE, sans attendre la conversion : LibreOffice peut
   // prendre plusieurs secondes sur un .pptx, et un telephone qui attend une
@@ -164,7 +260,7 @@ async function convertirEnSerie(acceptes) {
     try {
       const resultat = await preparer(fichier, dossierDuDocument(document.id));
       if (resultat.erreur) documentEnEchec(document, resultat.erreur);
-      else documentPret(document, resultat.pages);
+      else documentPret(document, resultat);
     } catch (err) {
       console.error('[conversion]', err);
       documentEnEchec(document, 'Conversion impossible.');
@@ -246,6 +342,20 @@ async function gererLaMain(req, res, url) {
   return json(res, 200, { mainA: salle.mainA });
 }
 
+// Lire ou mettre en pause la video affichee. Meme regle que les pages : c'est
+// une commande de l'ecran, elle demande la main.
+//
+// Une video ne demarre JAMAIS toute seule a l'arrivee : le son partirait dans
+// une salle qui parle encore d'autre chose. Quelqu'un appuie sur Lire.
+async function commanderLaVideo(req, res, url) {
+  const corps = await corpsAvecCode(req, res, url);
+  if (!corps) return undefined;
+
+  if (!peutPiloter(corps.participant)) return refusDeLaMain(res);
+  if (!reglerLecture(corps.lecture)) return erreur(res, 404, "Aucune vidéo n'est affichée.");
+  return json(res, 200, { affichage: etatPublic().affichage });
+}
+
 // --- L'animateur ------------------------------------------------------------
 //
 // Aucune barriere de plus que le code de salle : le cahier ne veut pas de
@@ -267,6 +377,39 @@ async function routerAnimateur(req, res, url, chemin) {
   if (chemin === '/api/animateur/retirer') {
     if (!retirerDocument(corps.documentId)) return erreur(res, 404, 'Document inconnu.');
     return json(res, 200, { retire: true });
+  }
+  if (chemin === '/api/animateur/accueil') {
+    // Redonner le QR code a la demande, sans rien effacer : un retardataire
+    // arrive, on lui montre le code, on reprend.
+    revenirAAccueil();
+    return json(res, 200, { affichage: etatPublic().affichage });
+  }
+  if (chemin === '/api/animateur/confort') {
+    // Le confort de l'ecran (§11, phase 4). Borne ici, et pas seulement dans la
+    // page : une luminosite a zero rendrait l'ecran noir sans qu'on comprenne
+    // pourquoi, et le seul moyen de revenir serait de fouiller le JSON.
+    //
+    // `Number(x) || defaut` serait un piege ici : zero est faux en JavaScript,
+    // donc une luminosite de 0 deviendrait 100 et la borne basse ne serait
+    // JAMAIS atteinte. On teste donc que c'est un nombre, pas qu'il est vrai.
+    const nombre = (valeur, defaut) => (Number.isFinite(Number(valeur)) ? Number(valeur) : defaut);
+
+    const modifs = {};
+    if (corps.luminosite !== undefined) {
+      modifs.luminosite = Math.max(40, Math.min(100, nombre(corps.luminosite, 100)));
+    }
+    if (corps.retourAccueilMinutes !== undefined) {
+      modifs.retourAccueilMinutes = Math.max(0, Math.min(240, nombre(corps.retourAccueilMinutes, 0)));
+    }
+    enregistrerReglages(modifs);
+    // Les reglages ne passent pas par salle.js : il faut donc reveiller le flux
+    // a la main, sinon l'ecran garderait l'ancienne luminosite jusqu'au
+    // prochain changement de la reunion.
+    signalerChangement();
+    return json(res, 200, {
+      luminosite: reglages.luminosite,
+      retourAccueilMinutes: reglages.retourAccueilMinutes,
+    });
   }
   if (chemin === '/api/animateur/terminer') {
     // Le geste du §9.1 : les fichiers quittent le disque, un nouveau code est
@@ -312,6 +455,7 @@ export function creerGestionnaire() {
       if (chemin === '/api/afficher' && req.method === 'POST') return await mettreALEcran(req, res, url);
       if (chemin === '/api/page' && req.method === 'POST') return await tourner(req, res, url);
       if (chemin === '/api/rejoindre' && req.method === 'POST') return await rejoindre(req, res, url);
+      if (chemin === '/api/video' && req.method === 'POST') return await commanderLaVideo(req, res, url);
       if (chemin === '/api/main' && req.method === 'POST') return await gererLaMain(req, res, url);
       if (chemin.startsWith('/api/animateur/') && req.method === 'POST') {
         return await routerAnimateur(req, res, url, chemin);
@@ -319,6 +463,7 @@ export function creerGestionnaire() {
       if (chemin === '/api/qr.svg' && req.method === 'GET') return await servirQr(req, res);
 
       if (chemin.startsWith('/page/')) return servirPage(res, chemin);
+      if (chemin.startsWith('/video/')) return servirVideo(req, res, chemin);
 
       if (chemin === '/scene') return servirFichier(res, path.join(racinePublique, 'scene.html'));
       if (chemin === '/animateur') return servirFichier(res, path.join(racinePublique, 'animateur.html'));

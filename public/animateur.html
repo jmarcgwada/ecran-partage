@@ -47,6 +47,27 @@
     </section>
 
     <section>
+      <h2>Confort de l’écran</h2>
+      <label for="luminosite">Luminosité des documents — <span id="luminosite-valeur">100 %</span></label>
+      <input type="range" id="luminosite" min="40" max="100" step="10" value="100">
+      <p class="vide">Un document blanc sur un vidéoprojecteur, lumière éteinte, éblouit.</p>
+
+      <label for="retour">Revenir au QR code d’accueil après</label>
+      <select id="retour">
+        <option value="0">jamais</option>
+        <option value="5">5 minutes sans activité</option>
+        <option value="15">15 minutes sans activité</option>
+        <option value="30">30 minutes sans activité</option>
+      </select>
+      <p class="vide">
+        Le document reste dans la liste ; seul l’écran revient à l’accueil, pour
+        qu’un retardataire puisse scanner. Attention : une discussion de vingt
+        minutes sur une même diapositive est le cas normal d’une réunion.
+      </p>
+      <button type="button" class="bouton secondaire" id="accueil">Revenir à l’accueil maintenant</button>
+    </section>
+
+    <section>
       <h2>Terminer</h2>
       <p class="vide">
         Termine la réunion : les documents sont <strong>effacés du disque</strong>,

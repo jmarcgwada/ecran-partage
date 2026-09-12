@@ -135,6 +135,12 @@ function ecouterLeFlux() {
   };
 }
 
+// Une requete brute, pour les cas ou fetch normalise trop : chemins tordus,
+// en-tetes exotiques. Definie tot, elle sert dans presque toutes les sections.
+const brute = (chemin) => new Promise((resoudre) => {
+  http.request({ host: '127.0.0.1', port, path: chemin }, (r) => { r.resume(); resoudre(r.statusCode); }).end();
+});
+
 const flux = ecouterLeFlux();
 const entetesDuFlux = await flux.entetes;
 
@@ -433,15 +439,118 @@ verifier('et il a quitté le disque', !fs.existsSync(dossierRetire));
 verifier('retirer un document inconnu est refusé',
   (await poster('/api/animateur/retirer', { documentId: '00112233445566ff' })).status === 404);
 
+// --- Les vidéos (§11, phase 4) ----------------------------------------------
+//
+// Une video n'est PAS convertie : elle est servie telle quelle. Le contenu
+// n'a donc pas besoin d'etre une vraie video pour eprouver la plomberie — ce
+// qui compte ici, ce sont les requetes de plage, sans lesquelles on ne peut
+// pas avancer dans un film.
+
+const filmee = Buffer.alloc(64 * 1024, 7);
+const clip = await depot(code, 'la démo.mp4', filmee, { prenom: 'Camille' }).then((r) => r.json());
+const idClip = clip.documents[0].id;
+
+const clipPret = await flux.attendre((e) => {
+  const d = e.documents.find((x) => x.id === idClip);
+  return d && d.etat === 'pret';
+}, 30_000);
+
+verifier('une vidéo est acceptée sans conversion', clipPret !== null);
+verifier('elle est signalée comme vidéo dans la liste',
+  clipPret !== null && clipPret.documents.find((d) => d.id === idClip).estVideo === true);
+verifier('elle prend l’écran, avec une adresse de vidéo et non d’image',
+  clipPret !== null && clipPret.affichage.video === `/video/${idClip}` && !clipPret.affichage.image);
+verifier('une vidéo arrive en pause, jamais en lecture',
+  clipPret !== null && clipPret.affichage.lecture === false);
+
+const entier = await fetch(`${base}/video/${idClip}`);
+verifier('la vidéo se sert en entier', entier.status === 200
+  && (await entier.arrayBuffer()).byteLength === filmee.length);
+verifier('elle annonce accepter les plages', entier.headers.get('accept-ranges') === 'bytes');
+verifier('elle annonce son type', entier.headers.get('content-type') === 'video/mp4');
+
+const plage = await fetch(`${base}/video/${idClip}`, { headers: { range: 'bytes=100-199' } });
+verifier('une plage rend 206 et sa taille exacte',
+  plage.status === 206 && (await plage.arrayBuffer()).byteLength === 100, String(plage.status));
+verifier('elle dit quelle plage elle rend',
+  plage.headers.get('content-range') === `bytes 100-199/${filmee.length}`,
+  plage.headers.get('content-range'));
+
+// « bytes=-500 » : les cinq cents DERNIERS octets. Forme rare mais licite, et
+// l'oublier fait repartir la lecture a l'envers.
+const suffixe = await fetch(`${base}/video/${idClip}`, { headers: { range: 'bytes=-500' } });
+verifier('une plage par la fin rend bien la fin',
+  suffixe.status === 206
+  && suffixe.headers.get('content-range') === `bytes ${filmee.length - 500}-${filmee.length - 1}/${filmee.length}`,
+  suffixe.headers.get('content-range'));
+
+const horsPlage = await fetch(`${base}/video/${idClip}`, { headers: { range: 'bytes=999999-' } });
+verifier('une plage hors du fichier rend 416', horsPlage.status === 416, String(horsPlage.status));
+verifier('une vidéo inconnue est refusée',
+  await brute('/video/00112233445566ff') === 404);
+
+verifier('on ne commande pas la lecture sans le bon code',
+  (await poster('/api/video', { lecture: true }, codeFaux)).status === 403);
+verifier('la lecture se commande depuis le téléphone',
+  (await poster('/api/video', { lecture: true }).then((r) => r.json())).affichage.lecture === true);
+verifier('l’écran est prévenu de la mise en lecture',
+  (await flux.attendre((e) => e.affichage.lecture === true, 5000)) !== null);
+verifier('et de la mise en pause',
+  (await poster('/api/video', { lecture: false }).then((r) => r.json())).affichage.lecture === false);
+
+// Une video trop grosse n'est pas jugee a l'aune d'un document : deux natures,
+// deux limites.
+verifier('la limite d’une vidéo n’est pas celle d’un document',
+  (await fetch(`${base}/api/etat`).then((r) => r.json())).limites.tailleMaxVideoMo
+  > (await fetch(`${base}/api/etat`).then((r) => r.json())).limites.tailleMaxMo);
+
+// --- Le confort de l'écran --------------------------------------------------
+
+verifier('le confort ne se règle pas sans le bon code',
+  (await poster('/api/animateur/confort', { luminosite: 50 }, codeFaux)).status === 403);
+verifier('la luminosité se règle',
+  (await poster('/api/animateur/confort', { luminosite: 60 }).then((r) => r.json())).luminosite === 60);
+// Bornee cote SERVEUR et pas seulement dans la page : un ecran noir dont on ne
+// saurait pas revenir serait une panne, pas un reglage.
+verifier('une luminosité absurde est ramenée dans les clous',
+  (await poster('/api/animateur/confort', { luminosite: 0 }).then((r) => r.json())).luminosite === 40
+  && (await poster('/api/animateur/confort', { luminosite: 999 }).then((r) => r.json())).luminosite === 100);
+verifier('l’écran reçoit la luminosité par le flux',
+  (await flux.attendre((e) => e.luminosite === 100, 5000)) !== null);
+
+verifier('le délai de retour à l’accueil se règle',
+  (await poster('/api/animateur/confort', { retourAccueilMinutes: 15 }).then((r) => r.json()))
+    .retourAccueilMinutes === 15);
+
+verifier('l’animateur peut redonner le QR code à la demande',
+  (await poster('/api/animateur/accueil', {}).then((r) => r.json())).affichage.documentId === null);
+
+// Le retour automatique, sans attendre quinze minutes : on vieillit la reunion.
+// La video sert de cobaye : c'est le seul document « pret » hors conteneur.
+await afficherAvec(code, idClip, 0);
+verifier('rien ne revient à l’accueil tant que la réunion vit',
+  salleModule.retourAccueilSiInactif() === false);
+
+salleModule.salle.derniereActivite = Date.now() - 16 * 60 * 1000;
+verifier('après le délai, l’écran redonne le QR code',
+  salleModule.retourAccueilSiInactif() === true
+  && salleModule.etatPublic().affichage.documentId === null);
+verifier('mais les documents, eux, restent',
+  salleModule.etatPublic().documents.length > 0);
+
+const { reglages: reglagesConfort } = await import('../src/config.js');
+reglagesConfort.retourAccueilMinutes = 0;
+await afficherAvec(code, idClip, 0);
+salleModule.salle.derniereActivite = Date.now() - 300 * 60 * 1000;
+verifier('à zéro, le retour automatique est désactivé',
+  salleModule.retourAccueilSiInactif() === false);
+salleModule.salle.derniereActivite = Date.now();
+
 // --- Ce qui ne doit pas sortir ---------------------------------------------
 
 const etat = await fetch(`${base}/api/etat`).then((r) => r.json());
 verifier('aucun chemin de disque dans l’état public',
   !/[A-Za-z]:\\|\/data\/|\/tmp\//.test(JSON.stringify(etat)), JSON.stringify(etat).slice(0, 120));
-
-const brute = (chemin) => new Promise((resoudre) => {
-  http.request({ host: '127.0.0.1', port, path: chemin }, (r) => { r.resume(); resoudre(r.statusCode); }).end();
-});
 
 verifier('remontée de dossier refusée',
   [403, 404].includes(await brute('/../server.js')));
@@ -474,11 +583,28 @@ verifier('le refus annonce la limite en clair',
 verifier('le serveur répond encore après un refus en cours d’envoi',
   (await fetch(`${base}/api/sante`)).ok);
 
+// Seul dans l'envoi, un fichier refuse fait echouer l'envoi — et le dit avec le
+// statut qui convient : 415 pour un format, 413 pour une taille. Repondre
+// « 200, tout va bien, voici ce que j'ai refuse » serait une reponse de
+// formulaire, pas une reponse a quelqu'un qui attend son document a l'ecran.
 const mauvaisType = await depot(code, 'programme.exe', Buffer.from([0]));
-const refuse = await mauvaisType.json();
-verifier('un format non accepté est signalé sans faire échouer le dépôt',
-  mauvaisType.status === 200 && refuse.refuses.length === 1
-  && /Format non accepté/.test(refuse.refuses[0].motif));
+verifier('un format non accepté est refusé, et pas avec le statut d’une taille',
+  mauvaisType.status === 415, String(mauvaisType.status));
+verifier('le refus nomme le fichier fautif',
+  /programme\.exe/.test((await mauvaisType.json()).erreur || ''));
+
+// Mais il ne doit pas emporter les autres : c'est tout l'interet de peser
+// fichier par fichier.
+const melange = new FormData();
+melange.append('prenom', 'Amélie');
+melange.append('documents', new Blob([Buffer.from([0])]), 'programme.exe');
+melange.append('documents', new Blob([contenu]), 'le bon.pdf');
+const mele = await fetch(`${base}/api/depot?code=${code}`, { method: 'POST', body: melange });
+const resultatMele = await mele.json();
+verifier('un fichier refusé n’emporte pas les autres',
+  mele.status === 200 && resultatMele.documents.length === 1
+  && resultatMele.documents[0].nom === 'le bon.pdf'
+  && resultatMele.refuses.length === 1, String(mele.status));
 
 // --- La fin de reunion ------------------------------------------------------
 //

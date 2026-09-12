@@ -22,14 +22,13 @@ export const salle = {
   ouverteLe: 0,
   derniereActivite: 0,
 
-  // Le tour de parole, prevu par le modele du cahier (§7) mais pas encore
-  // employe : en phase 1, le dernier document depose s'affiche, point.
+  // Le tour de parole (§5, §7). Libre par defaut : chacun pilote l'ecran.
   mainA: null,
   laMainEstLibre: true,
 
   participants: [],
   documents: [],
-  affichage: { documentId: null, page: 0 },
+  affichage: { documentId: null, page: 0, lecture: false },
 };
 
 // --- Les abonnes au changement ---------------------------------------------
@@ -49,6 +48,13 @@ function signaler() {
   for (const fn of temoins) {
     try { fn(vue); } catch (err) { console.error('[salle] témoin', err); }
   }
+}
+
+// Les reglages de confort de l'ecran vivent dans config.js, pas ici — mais
+// l'ecran les recoit par le MEME flux. Il faut donc pouvoir reveiller les
+// temoins sans qu'aucun document n'ait bouge.
+export function signalerChangement() {
+  signaler();
 }
 
 // --- Le code de salle -------------------------------------------------------
@@ -92,7 +98,7 @@ export function nouvelleReunion() {
   salle.mainA = null;
   salle.participants = [];
   salle.documents = [];
-  salle.affichage = { documentId: null, page: 0 };
+  salle.affichage = { documentId: null, page: 0, lecture: false };
   signaler();
   return salle.code;
 }
@@ -211,6 +217,7 @@ export function ouvrirDocument({ nom, prenom }) {
     deposeLe: Date.now(),
     etat: 'conversion',
     pages: [],
+    video: null,      // le nom du fichier, pour une video servie telle quelle
     erreur: null,
   };
   salle.documents.push(document);
@@ -220,11 +227,13 @@ export function ouvrirDocument({ nom, prenom }) {
   return document;
 }
 
-export function documentPret(document, pages) {
+export function documentPret(document, resultat) {
   document.etat = 'pret';
-  document.pages = pages.map((nom) => `/page/${document.id}/${nom}`);
+  if (resultat.video) document.video = resultat.video;
+  else document.pages = (resultat.pages || []).map((nom) => `/page/${document.id}/${nom}`);
   toucher();
-  // Phase 1 : pas de tour de parole, le dernier document pret prend l'ecran.
+  // Deposer, c'est montrer : le dernier document pret prend l'ecran. Le tour de
+  // parole, lui, ne gouverne que ce qu'on fait ENSUITE.
   afficher(document.id, 0);
   return document;
 }
@@ -245,9 +254,33 @@ export function afficher(documentId, page = 0) {
   const document = documentPar(documentId);
   if (!document || document.etat !== 'pret') return false;
   const numero = Math.max(0, Math.min(Number(page) || 0, document.pages.length - 1));
-  salle.affichage = { documentId: document.id, page: numero };
+  // Une video arrive en pause : elle demarrera quand quelqu'un le decidera
+  // depuis son telephone, pas en surprenant la salle avec du son.
+  salle.affichage = { documentId: document.id, page: numero, lecture: false };
   toucher();
   signaler();
+  return true;
+}
+
+// Lire ou mettre en pause la video affichee. L'ecran suit par le flux.
+export function reglerLecture(enLecture) {
+  const document = documentPar(salle.affichage.documentId);
+  if (!document || !document.video) return false;
+  salle.affichage.lecture = !!enLecture;
+  toucher();
+  signaler();
+  return true;
+}
+
+// Le retour a l'accueil du §11, phase 4 : au bout d'un moment sans rien faire,
+// l'ecran redonne le QR code, pour qu'un retardataire puisse rejoindre sans
+// demander a personne. Les documents, eux, restent : ce n'est pas une fin de
+// reunion.
+export function retourAccueilSiInactif() {
+  const minutes = reglages.retourAccueilMinutes;
+  if (!minutes || !salle.affichage.documentId) return false;
+  if (Date.now() - salle.derniereActivite < minutes * 60 * 1000) return false;
+  revenirAAccueil();
   return true;
 }
 
@@ -288,7 +321,7 @@ export function retirerDocument(id) {
 
   // S'il etait a l'ecran, l'ecran revient a l'accueil : afficher le document
   // d'a cote serait une surprise, et laisser l'ancien serait un mensonge.
-  if (salle.affichage.documentId === id) salle.affichage = { documentId: null, page: 0 };
+  if (salle.affichage.documentId === id) salle.affichage = { documentId: null, page: 0, lecture: false };
 
   toucher();
   signaler();
@@ -296,7 +329,7 @@ export function retirerDocument(id) {
 }
 
 export function revenirAAccueil() {
-  salle.affichage = { documentId: null, page: 0 };
+  salle.affichage = { documentId: null, page: 0, lecture: false };
   toucher();
   signaler();
 }
@@ -326,7 +359,12 @@ export function etatPublic() {
       etat: d.etat,
       erreur: d.erreur,
       nbPages: d.pages.length,
+      estVideo: !!d.video,
     })),
+    // Le confort de l'ecran (§11, phase 4) : l'ecran s'y conforme sans qu'on
+    // ait a le rouvrir, puisque tout passe par le flux.
+    luminosite: reglages.luminosite,
+    retourAccueilMinutes: reglages.retourAccueilMinutes,
     affichage: {
       documentId: courant ? courant.id : null,
       page: salle.affichage.page,
@@ -334,6 +372,8 @@ export function etatPublic() {
       nom: courant ? courant.nom : null,
       prenom: courant ? courant.prenom : null,
       image: courant ? courant.pages[salle.affichage.page] || null : null,
+      video: courant && courant.video ? `/video/${courant.id}` : null,
+      lecture: !!salle.affichage.lecture,
     },
     // L'ecran s'en sert pour montrer « réception d'un document… » : c'est vrai
     // des qu'UN document est en cours, meme si un autre est deja affiche.

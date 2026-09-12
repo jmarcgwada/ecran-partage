@@ -33,10 +33,26 @@ const BUREAUTIQUE = new Set([
   '.ppt', '.pptx', '.odp',
 ]);
 
-export const extensionsAcceptees = ['.pdf', ...IMAGES, ...BUREAUTIQUE];
+// Les videos font exception a tout le reste : elles ne sont pas converties, on
+// les sert telles quelles a une balise <video> (§3.2). Aucun ffmpeg dans
+// l'image — transcoder une video de reunion sur un NAS prendrait plus longtemps
+// que la reunion.
+//
+// C'est donc LE NAVIGATEUR DE L'ECRAN qui decide s'il sait lire le fichier.
+// mp4 (H.264) et webm passent partout ; .mov et .mkv sont des emballages qui
+// peuvent contenir n'importe quoi, et l'ecran restera noir sans un mot si le
+// codec lui est etranger. On les accepte quand meme : refuser d'avance un
+// fichier qui aurait marche serait pire.
+const VIDEOS = new Set(['.mp4', '.m4v', '.webm', '.ogv', '.mov', '.mkv']);
+
+export const extensionsAcceptees = ['.pdf', ...IMAGES, ...BUREAUTIQUE, ...VIDEOS];
 
 export function typeAccepte(nom) {
   return extensionsAcceptees.includes(path.extname(nom).toLowerCase());
+}
+
+export function estUneVideo(nom) {
+  return VIDEOS.has(path.extname(nom).toLowerCase());
 }
 
 // 1600 points sur le plus grand cote : au-dela, on alourdit le transfert vers
@@ -104,6 +120,10 @@ export async function preparer(fichier, dossier) {
   const extension = path.extname(fichier.nom).toLowerCase();
 
   try {
+    // Une video n'a rien a preparer : elle est deja prete, c'est le navigateur
+    // de l'ecran qui fera le travail.
+    if (VIDEOS.has(extension)) return { video: path.basename(fichier.chemin) };
+
     if (IMAGES.has(extension)) {
       await versImageUnique(fichier.chemin, path.join(dossier, 'p-1.jpg'));
       return { pages: ['p-1.jpg'] };

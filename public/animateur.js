@@ -101,6 +101,30 @@
     envoyer('/api/animateur/donner', { participant: null });
   });
 
+  // --- Le confort de l'écran --------------------------------------------------
+  // La luminosité s'envoie au relâchement du curseur, pas à chaque pixel :
+  // glisser de 100 à 40 enverrait sept requêtes, dont six pour rien.
+
+  var curseur = document.getElementById('luminosite');
+  var valeurLuminosite = document.getElementById('luminosite-valeur');
+
+  curseur.addEventListener('input', function () {
+    valeurLuminosite.textContent = curseur.value + ' %';
+  });
+  curseur.addEventListener('change', function () {
+    envoyer('/api/animateur/confort', { luminosite: Number(curseur.value) });
+  });
+
+  document.getElementById('retour').addEventListener('change', function () {
+    envoyer('/api/animateur/confort', {
+      retourAccueilMinutes: Number(document.getElementById('retour').value),
+    });
+  });
+
+  document.getElementById('accueil').addEventListener('click', function () {
+    envoyer('/api/animateur/accueil', {});
+  });
+
   document.getElementById('terminer').addEventListener('click', function () {
     // Un geste sans retour se confirme. Pas de fenêtre maison : celle du
     // navigateur est la seule qu'on ne puisse pas rater.
@@ -182,6 +206,17 @@
       ? 'Fermer le tour de parole'
       : 'Rendre la main libre';
     boutonLiberer.hidden = etat.laMainEstLibre || !etat.mainA;
+
+    // On ne réécrit pas un réglage que quelqu'un est en train de manipuler :
+    // le curseur sauterait sous le doigt à chaque battement du flux.
+    if (document.activeElement !== curseur) {
+      curseur.value = etat.luminosite === undefined ? 100 : etat.luminosite;
+      valeurLuminosite.textContent = curseur.value + ' %';
+    }
+    var retour = document.getElementById('retour');
+    if (document.activeElement !== retour) {
+      retour.value = String(etat.retourAccueilMinutes === undefined ? 0 : etat.retourAccueilMinutes);
+    }
 
     var participants = etat.participants || [];
     participantsVides.hidden = participants.length > 0;

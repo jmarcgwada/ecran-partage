@@ -11,7 +11,7 @@
 import http from 'node:http';
 
 import { initDossiers, reglages } from './src/config.js';
-import { nouvelleReunion, effacerSiOubliee } from './src/salle.js';
+import { nouvelleReunion, effacerSiOubliee, retourAccueilSiInactif } from './src/salle.js';
 import { creerGestionnaire } from './src/api.js';
 import { prechaufferBureautique } from './src/documents.js';
 
@@ -53,9 +53,19 @@ prechaufferBureautique().then((resultat) => {
   else console.log(`[conversion] LibreOffice indisponible : ${resultat.motif}`);
 });
 
-// Le filet du §9.2, verifie toutes les dix minutes. Une reunion oubliee
-// s'efface d'elle-meme au bout de quelques heures d'inactivite.
-const rythme = setInterval(effacerSiOubliee, 10 * 60 * 1000);
+// Deux surveillances, une seule minuterie. Toutes les minutes, parce que le
+// retour a l'accueil se regle EN MINUTES : un battement de dix minutes rendrait
+// un reglage de cinq minutes fantaisiste.
+//
+//   retourAccueilSiInactif — le confort du §11 : l'ecran redonne le QR code
+//                            apres un moment sans rien faire. Les documents
+//                            restent, ce n'est pas une fin de reunion.
+//   effacerSiOubliee       — le filet du §9.2 : une reunion que personne n'a
+//                            terminee finit par s'effacer, pour de bon.
+const rythme = setInterval(() => {
+  retourAccueilSiInactif();
+  effacerSiOubliee();
+}, 60 * 1000);
 
 let fermeture = false;
 function arreter(signal) {

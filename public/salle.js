@@ -34,6 +34,7 @@
   var zonePages = document.getElementById('pages');
   var boutonPrecedent = document.getElementById('precedent');
   var boutonSuivant = document.getElementById('suivant');
+  var boutonLecture = document.getElementById('lecture');
   var sectionMain = document.getElementById('main-salle');
   var mainEtat = document.getElementById('main-etat');
   var boutonPrendre = document.getElementById('prendre');
@@ -160,8 +161,11 @@
 
       var refuses = reponse.refuses || [];
       if (refuses.length) {
-        dire('Refusé : ' + refuses.map(function (r) { return r.nom; }).join(', ')
-          + ' (format non accepté).', 'erreur');
+        // Le motif vient du serveur : « format non accepté » ou « dépasse
+        // 50 Mo ». L'écrire en dur ici mentirait une fois sur deux.
+        dire('Refusé : ' + refuses.map(function (r) {
+          return r.nom + ' — ' + (r.motif || 'refusé');
+        }).join(', ') + '.', 'erreur');
       } else {
         dire('Envoyé. Le document apparaît sur l’écran dans un instant.', 'bien');
       }
@@ -215,8 +219,9 @@
     if (etat.formats) {
       champFichiers.setAttribute('accept', etat.formats.join(','));
       document.getElementById('pied').textContent =
-        'Formats acceptés : PDF, Word, Excel, PowerPoint, images. '
-        + limites.tailleMaxMo + ' Mo par fichier. '
+        'Formats acceptés : PDF, Word, Excel, PowerPoint, images, vidéos. '
+        + limites.tailleMaxMo + ' Mo par document, '
+        + limites.tailleMaxVideoMo + ' Mo pour une vidéo. '
         + 'Les documents sont effacés à la fin de la réunion.';
     }
 
@@ -362,9 +367,17 @@
     commande.hidden = false;
     commandeNom.textContent = a.nom + (a.prenom ? ' — ' + a.prenom : '');
 
+    // Une vidéo n'a pas de pages, mais elle se met en marche et s'arrête. Une
+    // vidéo ne démarre jamais toute seule : le son partirait dans une salle qui
+    // parle encore d'autre chose.
+    var estVideo = !!a.video;
+    boutonLecture.hidden = !estVideo;
+    boutonLecture.disabled = !jePilote;
+    boutonLecture.textContent = a.lecture ? 'Mettre en pause' : 'Lire';
+
     // Un document d'une seule page n'a rien à tourner : les boutons
     // disparaissent plutôt que de rester grisés sans qu'on sache pourquoi.
-    zonePages.hidden = a.nbPages < 2;
+    zonePages.hidden = estVideo || a.nbPages < 2;
     commandePage.textContent = (a.page + 1) + ' / ' + a.nbPages;
     // Grisés plutôt que muets quand quelqu'un d'autre a la main : on voit tout
     // de suite que ce n'est pas à soi de piloter.
@@ -399,6 +412,24 @@
 
   boutonPrecedent.addEventListener('click', function () { tourner(-1); });
   boutonSuivant.addEventListener('click', function () { tourner(1); });
+
+  boutonLecture.addEventListener('click', function () {
+    if (!dernierEtat) return;
+    var requete = new XMLHttpRequest();
+    requete.open('POST', '/api/video?code=' + encodeURIComponent(code));
+    requete.setRequestHeader('content-type', 'application/json');
+    requete.onload = function () {
+      if (requete.status === 200) return dire('', '');
+      var reponse = {};
+      try { reponse = JSON.parse(requete.responseText); } catch (err) { /* défaut */ }
+      dire(reponse.erreur || 'Impossible pour l’instant.', 'erreur');
+    };
+    requete.onerror = function () { dire('Connexion interrompue.', 'erreur'); };
+    requete.send(JSON.stringify({
+      lecture: !dernierEtat.affichage.lecture,
+      participant: moi(),
+    }));
+  });
 
   // Un seul ecouteur, pose une fois pour toutes sur la liste.
   liste.addEventListener('click', function (evenement) {

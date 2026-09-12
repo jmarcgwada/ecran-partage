@@ -33,10 +33,34 @@ const defauts = {
 
   limites: {
     // 50 Mo : de quoi laisser passer un .pptx bourre d'images sans discuter.
-    // La vidéo, elle, viendra en phase 4 avec une limite a elle.
     tailleMaxMo: Number(process.env.ECR_TAILLE_MAX_MO) || 50,
+    // Une video de reunion pese des centaines de mega-octets (§10). « Limite
+    // haute mais REELLE » : 200 Mo, et la vraie contrainte n'est pas le disque
+    // mais la MEMOIRE. multipart.js charge le corps de la requete en entier
+    // avant de le decouper — c'est un choix assume pour rester sans dependance,
+    // mais il plafonne ce qu'on peut recevoir. Monter a 500 Mo ferait tenir un
+    // gigaoctet en memoire le temps d'un envoi, sur un NAS qui fait tourner
+    // quinze autres conteneurs.
+    tailleMaxVideoMo: Number(process.env.ECR_TAILLE_MAX_VIDEO_MO) || 200,
     fichiersMax: Number(process.env.ECR_FICHIERS_MAX) || 10,
   },
+
+  // --- Le confort de l'ecran (§11, phase 4) ---------------------------------
+
+  // Un document blanc sur un videoprojecteur, lumiere eteinte, eblouit. On
+  // attenue l'image entiere plutot que de l'inverser : inverser rendrait le
+  // texte lisible mais massacrerait la moindre photo.
+  // 100 = tel quel. En dessous de 50, on ne lit plus rien.
+  luminosite: Number(process.env.ECR_LUMINOSITE) || 100,
+
+  // Retour a l'ecran d'accueil apres ce nombre de minutes SANS ACTIVITE, pour
+  // que le QR code redevienne visible et qu'un retardataire puisse rejoindre.
+  //
+  // Zero par defaut, et ce n'est pas de la timidite : une discussion de vingt
+  // minutes sur une meme diapositive est le cas NORMAL d'une reunion. Escamoter
+  // le document sous le nez de ceux qui en parlent serait pire que le mal.
+  // Le reglage s'active depuis /animateur, en connaissance de cause.
+  retourAccueilMinutes: Number(process.env.ECR_RETOUR_ACCUEIL_MINUTES) || 0,
 
   // Le filet de securite du §9.2 : une reunion que personne n'a pris la peine
   // de terminer ne doit pas laisser un document confidentiel sur le NAS
@@ -80,3 +104,4 @@ export function enregistrerReglages(modifs) {
 }
 
 export const tailleMaxOctets = () => reglages.limites.tailleMaxMo * 1024 * 1024;
+export const tailleMaxVideoOctets = () => reglages.limites.tailleMaxVideoMo * 1024 * 1024;
