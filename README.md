@@ -23,7 +23,7 @@ réunion : un participant dépose, le document apparaît.
 | 1 — l'écran affiche quelque chose | **fait** |
 | 2 — le tour de parole | **fait** |
 | 3 — la fin de réunion (bouton « Terminer ») | **fait** |
-| 4 — le confort (vidéos, mode sombre, télécommande clavier) | à faire |
+| 4 — le confort (vidéos, atténuation, télécommande clavier) | **fait** |
 
 ### Ce que la phase 1 fait
 
@@ -62,10 +62,58 @@ Un **réglage**, pas une hiérarchie (§5), qui se bascule depuis `/animateur` :
 **Déposer n'a jamais rien à voir avec la main** : on prépare son document
 pendant que quelqu'un d'autre présente.
 
-### Ce que ça ne fait PAS encore
+### Les vidéos, et leurs limites
 
-Toute la phase 4 : vidéos, retour à l'accueil après un délai, mode sombre pour
-ne pas éblouir, télécommande au clavier pour l'écran.
+Une vidéo n'est **pas convertie** : elle est servie telle quelle à une balise
+`<video>`. Il n'y a pas de ffmpeg dans l'image — transcoder une vidéo de réunion
+sur un NAS prendrait plus longtemps que la réunion.
+
+**C'est donc le navigateur de l'écran qui décide s'il sait la lire.** `.mp4`
+(H.264) et `.webm` passent partout. `.mov` et `.mkv` sont des emballages qui
+peuvent contenir n'importe quoi : l'écran restera noir, sans un mot, si le codec
+lui est étranger. On les accepte quand même — refuser d'avance un fichier qui
+aurait marché serait pire.
+
+Une vidéo **arrive en pause** et démarre quand quelqu'un appuie sur « Lire »
+depuis son téléphone : le son ne part pas dans une salle qui parle encore
+d'autre chose. Si le navigateur de l'écran refuse de démarrer sur ordre du
+serveur — certains exigent un geste humain — les contrôles natifs restent
+visibles sous la vidéo.
+
+**Limite : 200 Mo**, contre 50 Mo pour un document. Pas 500 Mo, et la raison
+n'est pas le disque : `multipart.js` charge le corps de la requête en mémoire
+avant de le découper. C'est le prix de l'absence de dépendance npm.
+
+### Le confort de l'écran
+
+Réglable depuis `/animateur`, poussé à l'écran par le flux, sans rien rouvrir :
+
+- **Luminosité des documents.** Une page blanche sur un vidéoprojecteur, lumière
+  éteinte, éblouit. On atténue l'image plutôt que de l'inverser : inverser
+  rendrait le texte confortable et massacrerait la moindre photo. La barre du
+  bas, elle, n'est jamais atténuée — elle doit rester lisible.
+- **Retour au QR code après un délai d'inactivité.** *À zéro par défaut*, et ce
+  n'est pas de la timidité : une discussion de vingt minutes sur une même
+  diapositive est le cas normal d'une réunion, et escamoter le document sous le
+  nez de ceux qui en parlent serait pire que le mal.
+- **« Revenir à l'accueil maintenant »**, pour montrer le code à un retardataire
+  sans rien effacer.
+
+### La télécommande au clavier
+
+Sur `/scene`, pour un écran branché à un mini-PC ou à un portable : **flèches**
+pour les pages, **Échap** pour revenir à l'accueil.
+
+L'écran se fait connaître comme un participant nommé **« Écran »**. C'est ce qui
+le soumet au même tour de parole que les téléphones : quand la main n'est pas
+libre, l'animateur peut la lui donner comme à n'importe qui. Lui inventer un
+passe-droit qu'on peut s'envoyer soi-même n'en aurait pas été un.
+
+### Ce qui n'est pas fait
+
+Les quatre phases du cahier sont livrées. Ce qui reste est hors de son périmètre
+— et le §1 le dit : **ce n'est pas du partage d'écran en direct.** On envoie des
+documents, pas le contenu vivant d'un portable.
 
 ### Un écart assumé au découpage en phases
 
@@ -121,6 +169,8 @@ navigateur** et non un protocole de diffusion (§3.1), les documents deviennent
 | `/api/etat` | l'état public, pour déboguer d'un coup de `curl` |
 | `/api/afficher` | remettre un document à l'écran — `POST`, code de salle exigé |
 | `/api/page` | tourner une page — `POST {sens:-1\|1}`, code de salle exigé |
+| `/api/video` | lire ou mettre en pause — `POST {lecture:true\|false}` |
+| `/video/<id>` | la vidéo elle-même, avec les requêtes de plage |
 | `/api/flux` | le flux d'évènements |
 | `/api/sante` | pour le contrôle de santé du conteneur |
 
@@ -193,7 +243,10 @@ Dans `docker-compose.yml`. Ils ne servent qu'au premier démarrage : ensuite c'e
 | `ECR_HTTP_PORT` | `8802` | le port |
 | `ECR_NOM_SALLE` | `Salle de réunion` | affiché sur l'écran et sur les téléphones |
 | `ECR_ADRESSE_PUBLIQUE` | *(vide)* | **l'adresse par laquelle un TÉLÉPHONE joint le service** — c'est elle qu'on encode dans le QR code |
-| `ECR_TAILLE_MAX_MO` | `50` | par fichier |
+| `ECR_TAILLE_MAX_MO` | `50` | par document |
+| `ECR_TAILLE_MAX_VIDEO_MO` | `200` | par vidéo — plafonné par la mémoire, pas par le disque |
+| `ECR_LUMINOSITE` | `100` | atténuation des documents à l'écran, de 40 à 100 |
+| `ECR_RETOUR_ACCUEIL_MINUTES` | `0` | retour au QR code après ce temps d'inactivité ; `0` = jamais |
 | `ECR_FICHIERS_MAX` | `10` | par envoi |
 | `ECR_EFFACEMENT_HEURES` | `4` | le filet du §9.2 : inactivité au bout de laquelle tout s'efface |
 
@@ -242,6 +295,7 @@ Délai entre le dépôt et l'affichage à l'écran, conteneur `ecran-partage` :
 | PDF, 12 pages | ~320 ms |
 | Passage par LibreOffice (`.txt`, `.docx`, `.pptx`…), conteneur chaud | ~1,8 s |
 | Passage par LibreOffice, **tout premier document d'un conteneur neuf** | **12,4 s** |
+| Vidéo | immédiat — aucune conversion |
 
 La réponse au téléphone, elle, tombe en moins de 10 ms : le serveur répond
 avant de convertir, exprès.
@@ -278,5 +332,11 @@ d'attaquer la phase 2.
 3. **Un vrai `.pptx` déposé depuis un vrai téléphone**, pour confirmer les
    mesures ci-dessus hors laboratoire.
 
-~~La conversion dans le conteneur~~ — **fait** : le banc passe ses 89 contrôles
+~~La conversion dans le conteneur~~ — **fait** : le banc passe ses 118 contrôles
 dans le conteneur, sans aucun `IGNORE`.
+
+4. **La lecture d'une vraie vidéo sur le vrai écran.** La plomberie est éprouvée
+   — requêtes de plage, `206`, `416`, plage par la fin, lecture et pause — mais
+   **aucune vidéo réelle n'a jamais été lue** : il n'y avait pas de fichier
+   neutre à disposition, et le `ffmpeg` du NAS est amputé de son encodeur H.264.
+   Déposez un clip depuis un téléphone, c'est le seul vrai test.
