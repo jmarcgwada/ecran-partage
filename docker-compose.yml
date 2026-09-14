@@ -4,9 +4,13 @@
 #   http://<nas>:8802/scene         a ouvrir en plein ecran dans la salle
 #   http://<nas>:8802/salle/<code>  ou menent les QR codes
 #
-# CE SERVICE NE VA PAS SUR INTERNET (§9.3 du cahier de projet). Pas de regle de
-# proxy inverse DSM pour lui. Si l'acces a distance devient necessaire un jour :
-# tailscale serve, jamais funnel.
+# Le cahier voulait ce service hors d'Internet (§9.3). Il y est desormais, par
+# choix : les telephones en 4G doivent pouvoir rejoindre la reunion. Ce qui le
+# rend possible, c'est la PORTE PUBLIQUE (src/acces.js) — depuis Internet rien
+# ne se lit sans le code de salle, et les codes faux sont limites. Voir le README.
+#
+# L'ecran de la salle, lui, s'ouvre TOUJOURS par l'adresse locale : il n'a pas
+# de code a presenter, et /scene est introuvable depuis Internet.
 # ============================================================================
 
 services:
@@ -40,9 +44,15 @@ services:
 
       # L'adresse par laquelle un TELEPHONE joint le service — c'est elle qu'on
       # encode dans le QR code. Laissee vide, on encode l'adresse par laquelle
-      # l'ecran de la salle a ouvert la page, ce qui suffit tant que tout le
-      # monde est sur le meme reseau.
-      #   exemple : http://192.168.0.10:8802
+      # l'ecran de la salle a ouvert la page.
+      #
+      # Pour une exposition sur Internet, c'est l'adresse PUBLIQUE, et elle sert
+      # AUSSI a reconnaitre la porte publique : une requete qui demande ce nom
+      # d'hote vient d'Internet.
+      #   exemple : https://ecran.exemple.fr
+      #
+      # ATTENTION : ce reglage n'agit qu'au TOUT PREMIER demarrage. Ensuite
+      # c'est data/reglages.json qui commande, et cette ligne est ignoree.
       ECR_ADRESSE_PUBLIQUE: ""
 
       # 50 Mo par fichier : de quoi laisser passer un .pptx bourre d'images.
@@ -52,3 +62,11 @@ services:
       # Le filet du §9.2 : une reunion que personne n'a terminee s'efface
       # d'elle-meme apres ce nombre d'heures SANS ACTIVITE.
       ECR_EFFACEMENT_HEURES: "4"
+
+      # Depuis Internet : codes de salle faux permis par adresse en dix minutes,
+      # avant mise en attente.
+      ECR_CODES_FAUX_MAX: "10"
+
+      # Le secours du role d'animateur : sans signe de vie de son telephone
+      # pendant ce delai, le role redevient revendicable.
+      ECR_ANIMATEUR_ABSENT_MINUTES: "10"

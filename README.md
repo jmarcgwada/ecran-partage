@@ -205,9 +205,21 @@ docker compose up -d --build
 
 Puis, sur l'écran de la salle, ouvrir `http://<nas>:8802/scene` en plein écran.
 
-**Ce service ne va pas sur Internet** (§9.3) : pas de règle de proxy inverse DSM
-pour lui. Si l'accès à distance devient nécessaire, `tailscale serve`, jamais
-`funnel`.
+### Sur Internet
+
+Le cahier voulait ce service hors d'Internet (§9.3). Il peut y être, pour que
+des téléphones en 4G rejoignent la réunion — à condition de passer par le
+**proxy inverse de DSM** et de régler l'**adresse publique** :
+
+1. un nom de domaine qui pointe vers la box ;
+2. dans DSM : un certificat Let's Encrypt pour ce nom, une règle de proxy
+   inverse `https://<nom>:443` → `http://<nas>:8802`, et **l'association du
+   certificat à ce service** (oubliée, DSM sert le certificat du NAS et le
+   navigateur refuse) ;
+3. **ensuite seulement**, l'adresse publique dans `data/reglages.json` —
+   avant, tous les QR codes mèneraient vers une adresse morte.
+
+L'écran de la salle continue de s'ouvrir par l'adresse **locale**.
 
 ---
 
@@ -216,23 +228,36 @@ pour lui. Si l'accès à distance devient nécessaire, `tailscale serve`, jamais
 Il ferme **les gestes** : déposer un document, en remettre un à l'écran, tourner
 les pages, et tout ce que fait l'animateur. Sans lui, on ne fait rien.
 
-Il ne ferme **pas la lecture**. `/api/etat` répond à qui peut joindre le
-serveur, et il contient le code — il le faut bien, puisque l'écran de la salle
-doit l'afficher en grand sans avoir rien à prouver. Quiconque atteint le serveur
-et connaît cette adresse connaît donc le code.
+**Sur le réseau de la salle, il ne ferme pas la lecture.** `/api/etat` y répond
+sans code, et il contient le code — il le faut bien, puisque l'écran de la salle
+doit l'afficher en grand sans avoir rien à prouver. Sur ce réseau, la frontière
+est le réseau lui-même (§9.3).
 
-C'est assumé, et c'est ce que dit le cahier : le code est l'équivalent du code
-de retrait d'un magasin, « assez pour empêcher le bureau d'à côté »
-(§4). **La vraie frontière du service est le réseau de la salle** (§9.3) — pas
-ces quatre chiffres.
+**Depuis Internet, il ferme tout — lecture comprise.** Ce n'était pas le cas au
+départ, et c'était une fuite sérieuse : l'état donnait à n'importe qui le code,
+la liste des documents et l'adresse de leurs pages, qui se téléchargeaient
+ensuite sans code. La porte publique (`src/acces.js`) :
+
+- se reconnaît au **nom d'hôte** demandé, et non à l'adresse de la prise —
+  derrière le proxy tout semble venir du NAS ;
+- refuse l'état, le flux et le QR code sans le code (le QR code *encode* le
+  code) ; rend l'écran de la salle introuvable ;
+- limite les codes faux : dix par adresse en dix minutes, puis attente — et
+  une adresse bloquée n'apprend plus rien, même en visant juste ;
+- identifie le client par la **dernière** entrée de `X-Forwarded-For`, celle
+  qu'ajoute le proxy. Vérifié à travers le vrai proxy de DSM : un en-tête
+  inventé ne débloque rien.
+
+Ce que la limite ne fait pas : arrêter un attaquant disposant de milliers
+d'adresses. Elle transforme quelques minutes en jours pour une adresse seule ;
+le code, lui, change à chaque réunion.
 
 Même remarque pour l'identifiant de participant : il est tiré au sort par le
 téléphone et voyage en clair. Il empêche les gestes involontaires, pas un
 participant décidé à reprendre la main.
 
 Si un jour cela ne suffit plus, il ne faudra pas durcir le code de salle mais
-changer de conception — et le §9.3 rappelle que ce service n'a rien à faire sur
-Internet.
+changer de conception : des comptes, ou un jeton par participant.
 
 ## Les réglages
 
@@ -250,6 +275,8 @@ Dans `docker-compose.yml`. Ils ne servent qu'au premier démarrage : ensuite c'e
 | `ECR_RETOUR_ACCUEIL_MINUTES` | `0` | retour au QR code après ce temps d'inactivité ; `0` = jamais |
 | `ECR_FICHIERS_MAX` | `10` | par envoi |
 | `ECR_EFFACEMENT_HEURES` | `4` | le filet du §9.2 : inactivité au bout de laquelle tout s'efface |
+| `ECR_CODES_FAUX_MAX` | `10` | depuis Internet : codes faux par adresse en dix minutes avant mise en attente |
+| `ECR_ANIMATEUR_ABSENT_MINUTES` | `10` | secours du rôle d'animateur : délai sans signe de vie avant qu'il redevienne revendicable |
 
 ### `ECR_ADRESSE_PUBLIQUE`, le réglage qui compte
 
