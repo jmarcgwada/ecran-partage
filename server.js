@@ -14,7 +14,7 @@ import { initDossiers, reglages } from './src/config.js';
 import {
   nouvelleReunion, effacerSiOubliee, retourAccueilSiInactif, surveillerAnimateur,
 } from './src/salle.js';
-import { oublierLesVieuxEchecs } from './src/acces.js';
+import { oublierLesVieuxEchecs, jetonEcran } from './src/acces.js';
 import { creerGestionnaire } from './src/api.js';
 import { prechaufferBureautique } from './src/documents.js';
 
@@ -39,6 +39,12 @@ serveur.listen(port, () => {
   console.log(`[http]   code de salle       : ${code}`);
   if (!reglages.adressePublique) {
     console.log("[http]   adresse publique non réglée : le QR code encodera l'adresse par laquelle l'écran a ouvert la page");
+  } else {
+    // L'adresse de l'ecran par la porte publique, jeton compris. Le journal du
+    // conteneur est reserve a qui administre le NAS : c'est le seul endroit ou
+    // le jeton se lit — jamais sur un telephone. Voir acces.js.
+    const base = reglages.adressePublique.replace(/\/+$/, '');
+    console.log(`[http]   l'écran par l'adresse publique : ${base}/scene?jeton=${jetonEcran()}`);
   }
 });
 

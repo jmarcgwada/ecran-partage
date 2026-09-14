@@ -244,7 +244,33 @@ des téléphones en 4G rejoignent la réunion — à condition de passer par le
 3. **ensuite seulement**, l'adresse publique dans `data/reglages.json` —
    avant, tous les QR codes mèneraient vers une adresse morte.
 
-L'écran de la salle continue de s'ouvrir par l'adresse **locale**.
+#### L'écran de la salle, par l'adresse publique
+
+Sur le réseau local, l'écran s'ouvre sans rien présenter. Par l'adresse publique,
+il présente un **jeton d'écran** :
+
+```
+https://<adresse publique>/scene?jeton=<jeton>
+```
+
+L'adresse complète s'affiche **dans le journal du conteneur**, au démarrage, dès
+que l'adresse publique est réglée — et **nulle part ailleurs** :
+
+```
+[http]   l'écran par l'adresse publique : https://…/scene?jeton=…
+```
+
+- **Jamais sur un téléphone**, pas même celui de l'animateur : n'importe qui peut
+  devenir animateur, et le jeton ouvre *toutes* les réunions à venir, pas
+  seulement la sienne.
+- **Durable** : il vit dans `data/jeton-ecran` et survit aux redémarrages — un
+  écran s'ouvre une fois pour toutes. **Pour en changer**, supprimer ce fichier et
+  redémarrer ; l'ancienne adresse cesse aussitôt de fonctionner.
+- **Hors de la limite des codes faux** : dans une salle, l'écran et les téléphones
+  sortent souvent par la même adresse Internet, et dix fautes de frappe d'un
+  participant ne doivent pas éteindre l'écran. Sans risque : 256 bits ne se
+  devinent pas. Pour la même raison, un jeton faux n'est pas compté comme un
+  échec — un écran resté sur un ancien jeton ne bloque pas la salle.
 
 ---
 

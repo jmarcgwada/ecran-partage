@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
 <title>Écran Partagé</title>
 
 <!--
@@ -264,6 +265,20 @@
 (function () {
   'use strict';
 
+  // --- Le jeton de l'ecran -------------------------------------------------
+  // Present quand l'ecran s'ouvre par l'adresse PUBLIQUE (/scene?jeton=...),
+  // absent sur le reseau local ou il ne sert a rien. Il accompagne chaque
+  // lecture de l'etat : sans lui, la porte publique ne dit rien.
+  //
+  // Lu a la main plutot qu'avec URLSearchParams, que les WebView un peu
+  // anciennes ne connaissent pas — et une erreur ici donnerait un ecran noir.
+  var trouveJeton = /[?&]jeton=([^&#]+)/.exec(location.search);
+  var jeton = trouveJeton ? decodeURIComponent(trouveJeton[1]) : '';
+  function avecJeton(adresse) {
+    if (!jeton) return adresse;
+    return adresse + (adresse.indexOf('?') >= 0 ? '&' : '?') + 'jeton=' + encodeURIComponent(jeton);
+  }
+
   var accueil = document.getElementById('accueil');
   var vue = document.getElementById('vue');
   var page = document.getElementById('page');
@@ -287,7 +302,7 @@
   function poserQr(code) {
     if (code === codeAffiche) return;
     codeAffiche = code;
-    var source = '/api/qr.svg?c=' + encodeURIComponent(code);
+    var source = avecJeton('/api/qr.svg?c=' + encodeURIComponent(code));
     qr.style.display = '';
     qrSecours.style.display = 'none';
     qr.src = source;
@@ -304,7 +319,7 @@
 
   function demanderAdresse() {
     var requete = new XMLHttpRequest();
-    requete.open('GET', '/api/etat');
+    requete.open('GET', avecJeton('/api/etat'));
     requete.onload = function () {
       try {
         var etat = JSON.parse(requete.responseText);
@@ -420,7 +435,7 @@
   var flux = null;
   function brancher() {
     if (flux) flux.close();
-    flux = new EventSource('/api/flux');
+    flux = new EventSource(avecJeton('/api/flux'));
 
     flux.addEventListener('etat', function (evenement) {
       avisLien.className = '';

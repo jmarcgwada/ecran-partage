@@ -799,6 +799,64 @@ verifier('s’inventer une adresse en tête de X-Forwarded-For ne débloque rien
 verifier('une autre adresse n’est pas pénalisée',
   (await porte('/api/etat?code=' + codeActuel, { xff: '203.0.113.50' })).statut === 200);
 
+// --- Le jeton de l'ecran ---
+//
+// Par la porte publique, l'ecran de la salle presente un jeton au lieu d'un code.
+// On l'eprouve PENDANT que l'adresse 203.0.113.7 est bloquee pour codes faux :
+// c'est le cas reel qui a decide du choix — l'ecran et les telephones d'une salle
+// sortent par la meme adresse, et dix fautes de frappe ne doivent pas eteindre
+// l'ecran en pleine reunion.
+
+const jeton = acces.jetonEcran();
+verifier('le jeton de l’écran est long, et ne se devine pas', jeton.length >= 40, String(jeton.length));
+
+verifier('sans jeton, l’écran reste introuvable depuis Internet',
+  (await porte('/scene')).statut === 404);
+verifier('avec un jeton faux, aussi',
+  (await porte('/scene?jeton=' + 'x'.repeat(43))).statut === 404);
+
+verifier('l’adresse 203.0.113.7 est bien bloquée à ce moment-là',
+  (await porte('/api/etat?code=' + codeActuel)).statut === 429);
+
+verifier('avec le bon jeton, l’écran s’ouvre — même sur une adresse bloquée',
+  (await porte('/scene?jeton=' + encodeURIComponent(jeton))).statut === 200);
+
+const etatEcran = await porte('/api/etat?jeton=' + encodeURIComponent(jeton));
+verifier('avec le bon jeton, l’état se lit, et donne le code à afficher',
+  etatEcran.statut === 200 && etatEcran.corps.includes(codeActuel), String(etatEcran.statut));
+verifier('avec le bon jeton, le flux s’ouvre',
+  (await porte('/api/flux?jeton=' + encodeURIComponent(jeton))).statut === 200);
+// Hors conteneur, qrencode manque et le QR code rend 500 : ce qui compte ici,
+// c'est que la porte ne le REFUSE plus.
+const qrEcran = (await porte('/api/qr.svg?c=1&jeton=' + encodeURIComponent(jeton))).statut;
+verifier('avec le bon jeton, le QR code n’est plus refusé',
+  ![403, 404, 429].includes(qrEcran), String(qrEcran));
+
+// Le jeton ne doit sortir NULLE PART : ni par la porte locale, ni par l'etat qu'il
+// ouvre lui-meme. S'il fuyait, n'importe quel participant l'emporterait, et avec
+// lui l'acces a toutes les reunions a venir.
+const etatLocal = await porte('/api/etat', { hote: '192.0.2.10:8802', xff: '' });
+verifier('le jeton n’apparaît jamais dans l’état',
+  !etatLocal.corps.includes(jeton) && !etatEcran.corps.includes(jeton));
+
+const fauxJeton = await porte('/api/etat?jeton=' + 'y'.repeat(43), { xff: '203.0.113.60' });
+verifier('un jeton faux est refusé, sans rien laisser passer',
+  fauxJeton.statut === 403 && !fauxJeton.corps.includes(codeActuel), String(fauxJeton.statut));
+
+// Un ecran reste sur un ancien jeton ne doit pas faire bloquer toute la salle.
+for (let i = 0; i < reglagesPorte.codesFauxMax + 5; i += 1) {
+  await porte('/api/etat?jeton=' + 'z'.repeat(43), { xff: '203.0.113.60' });
+}
+verifier('un jeton faux ne compte pas comme un code faux',
+  (await porte('/api/etat?code=' + codeActuel, { xff: '203.0.113.60' })).statut === 200);
+
+// Durable : il survit a un redemarrage, sinon chaque deploiement casserait
+// l'adresse d'un ecran qu'on n'ouvre qu'une fois.
+const surDisque = fs.readFileSync(path.join(dossier, 'jeton-ecran'), 'utf8').trim();
+acces.oublierJetonEnMemoire();
+verifier('le jeton est enregistré, et survit à un redémarrage',
+  surDisque === jeton && acces.jetonEcran() === jeton);
+
 // Le reseau local n'est jamais bloque : le tailnet arrivant par la boucle
 // locale, un doigt qui fourche y bloquerait tout le monde.
 acces.toutOublier();

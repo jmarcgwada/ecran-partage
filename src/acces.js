@@ -14,7 +14,11 @@
 // ne se lit donc plus sans le code.
 // ============================================================================
 
-import { reglages } from './config.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+
+import { reglages, dossierDonnees } from './config.js';
 
 // La requete arrive-t-elle par la porte PUBLIQUE ?
 //
@@ -114,4 +118,70 @@ export function oublierLesVieuxEchecs() {
 // Pour le banc d'essai : repartir d'une table vide entre deux series.
 export function toutOublier() {
   echecs.clear();
+}
+
+// --- Le jeton de l'ecran ------------------------------------------------------
+//
+// L'ecran de la salle n'a pas de code a presenter : c'est lui qui l'AFFICHE. Tant
+// qu'il s'ouvrait sur le reseau local, il n'en avait pas besoin. Quand la salle
+// de reunion est ailleurs, il doit passer par la porte publique — et presenter
+// quelque chose. C'est ce jeton, dans l'adresse de l'ecran :
+//
+//   https://<adresse publique>/scene?jeton=...
+//
+// Trois partis pris :
+//
+//   - DURABLE. Il vit dans le dossier de donnees et survit aux redemarrages :
+//     l'ecran s'ouvre une fois pour toutes, un jeton qui changerait a chaque
+//     deploiement casserait son adresse. Pour en changer, supprimer le fichier
+//     et redemarrer ; l'ancienne adresse cesse aussitot de fonctionner.
+//
+//   - JAMAIS AFFICHE sur un telephone, pas meme celui de l'animateur. N'importe
+//     qui peut devenir animateur, et le jeton ouvre TOUTES les reunions a venir,
+//     pas seulement celle-ci : ce serait un acces permanent offert a quiconque a
+//     mene une reunion une fois. Il se lit dans le journal du conteneur, reserve
+//     a qui administre le NAS.
+//
+//   - HORS DE LA LIMITE DES CODES FAUX. Un jeton valide passe meme quand
+//     l'adresse est bloquee : dans une salle, l'ecran et les telephones sortent
+//     souvent par la meme adresse Internet, et dix fautes de frappe d'un
+//     participant eteindraient l'ecran en pleine reunion. Aucun risque a cela :
+//     256 bits ne se devinent pas, contrairement a quatre chiffres. Pour la meme
+//     raison, un jeton faux n'est pas compte comme un echec.
+
+const fichierJeton = () => path.join(dossierDonnees, 'jeton-ecran');
+let jetonEnMemoire = null;
+
+export function jetonEcran() {
+  if (jetonEnMemoire) return jetonEnMemoire;
+
+  try {
+    const lu = fs.readFileSync(fichierJeton(), 'utf8').trim();
+    // Un fichier tronque ou vide ne vaut pas jeton : on en refait un plutot que
+    // d'accepter un secret de trois caracteres.
+    if (lu.length >= 40) jetonEnMemoire = lu;
+  } catch {
+    // Premier demarrage : pas encore de jeton.
+  }
+
+  if (!jetonEnMemoire) {
+    jetonEnMemoire = crypto.randomBytes(32).toString('base64url');
+    fs.mkdirSync(dossierDonnees, { recursive: true });
+    fs.writeFileSync(fichierJeton(), jetonEnMemoire, { mode: 0o600 });
+  }
+  return jetonEnMemoire;
+}
+
+// Comparaison a duree constante, sur des empreintes de meme longueur : le temps
+// de reponse ne doit rien dire des premiers caracteres justes.
+export function jetonJuste(propose) {
+  if (!propose) return false;
+  const a = crypto.createHash('sha256').update(String(propose)).digest();
+  const b = crypto.createHash('sha256').update(jetonEcran()).digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
+// Pour le banc d'essai : oublier le jeton en memoire, comme un redemarrage.
+export function oublierJetonEnMemoire() {
+  jetonEnMemoire = null;
 }

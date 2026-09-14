@@ -40,7 +40,7 @@ import {
 } from './salle.js';
 import { ouvrirFlux } from './flux.js';
 import {
-  vientDeInternet, adresseDuClient, etatDesEssais, noterEchec,
+  vientDeInternet, adresseDuClient, etatDesEssais, noterEchec, jetonJuste,
 } from './acces.js';
 
 const executer = promisify(execFile);
@@ -549,14 +549,23 @@ export function creerGestionnaire() {
       // documents et l'adresse de leurs pages a n'importe qui. Le QR code aussi,
       // puisqu'il encode l'adresse de la salle — donc le code.
       //
-      // L'ecran de la salle, lui, n'a pas de code a presenter : il s'ouvre par
-      // l'adresse LOCALE, et n'a rien a faire sur la porte publique.
+      // L'ecran de la salle, lui, n'a pas de code a presenter — c'est lui qui
+      // l'affiche. Par la porte publique, il presente le JETON DE L'ECRAN (voir
+      // acces.js) ; sans ce jeton, /scene est introuvable.
+      //
+      // Un jeton faux n'est ni compte comme un echec, ni juge ensuite comme un
+      // code : il est simplement refuse. Le compter pourrait bloquer une salle
+      // entiere a cause d'un ecran reste sur un ancien jeton.
       if (vientDeInternet(req)) {
-        if (chemin === '/scene') {
+        const jetonPresente = url.searchParams.get('jeton');
+        const ecran = jetonJuste(jetonPresente);
+
+        if (chemin === '/scene' && !ecran) {
           res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
           return res.end('Introuvable');
         }
-        if (chemin === '/api/etat' || chemin === '/api/flux' || chemin === '/api/qr.svg') {
+        if (!ecran && (chemin === '/api/etat' || chemin === '/api/flux' || chemin === '/api/qr.svg')) {
+          if (jetonPresente) return erreur(res, 403, "Jeton d'écran invalide.");
           const verdict = jugerLeCode(req, url.searchParams.get('code'));
           if (verdict !== 'ok') return refusDeCode(res, verdict);
         }
