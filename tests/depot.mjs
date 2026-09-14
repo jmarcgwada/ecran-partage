@@ -688,6 +688,18 @@ verifier('un signe de vie rend le rôle à l’animateur revenu, si personne ne 
 
 // Etre la n'est pas une activite de la reunion : sinon un telephone ouvert sur
 // la table empecherait le retour a l'accueil et le filet d'effacement.
+//
+// Les conversions tournent en arriere-plan, et un document pret TOUCHE
+// l'activite — a raison, c'est un evenement de la reunion. Dans le conteneur, la
+// conversion de « le bon.pdf », deposé juste avant, pouvait finir pile entre les
+// deux lectures de ce controle et le faire tomber : une course du banc, pas un
+// defaut du service. Invisible sur le poste, ou la conversion echoue aussitot. On
+// attend donc qu'aucune conversion ne soit en cours avant de mesurer.
+const debutAttente = Date.now();
+while (salleModule.etatPublic().documents.some((d) => d.etat === 'conversion')
+  && Date.now() - debutAttente < 60_000) {
+  await new Promise((r) => setTimeout(r, 100));
+}
 salleModule.salle.derniereActivite = activiteAvant;
 await animer('/api/presence');
 verifier('un signe de vie ne compte pas comme une activité de la réunion',
