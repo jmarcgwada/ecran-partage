@@ -432,13 +432,31 @@
   // l'avertissement, et de le retirer quand le lien revient — le premier
   // evenement recu porte l'etat entier, il n'y a rien a rattraper.
 
+  // --- La reconnexion ---------------------------------------------------------
+  //
+  // EventSource se reconnecte tout seul apres une COUPURE RESEAU — mais PAS apres
+  // une erreur HTTP. Sur le reseau local, un redemarrage du service coupe la
+  // connexion : l'ecran repart seul. Derriere le proxy inverse, le meme
+  // redemarrage renvoie un 502 : le navigateur renonce pour de bon, et l'ecran
+  // reste fige jusqu'a ce que quelqu'un le recharge a la main. Pour un ecran
+  // qu'on ouvre une fois pour toutes, c'est une panne.
+  //
+  // Quand le flux est FERME (readyState 2), on le rouvre donc nous-memes, avec un
+  // delai qui s'allonge jusqu'a trente secondes : un proxy en panne ne doit pas
+  // etre martele toutes les trois secondes pendant une heure.
+
   var flux = null;
+  var delaiReprise = 3000;
+  var repriseProgrammee = null;
+
   function brancher() {
+    repriseProgrammee = null;
     if (flux) flux.close();
     flux = new EventSource(avecJeton('/api/flux'));
 
     flux.addEventListener('etat', function (evenement) {
       avisLien.className = '';
+      delaiReprise = 3000;   // le lien est revenu : le prochain incident repart du debut
       try {
         appliquer(JSON.parse(evenement.data));
       } catch (err) {
@@ -448,6 +466,10 @@
 
     flux.onerror = function () {
       avisLien.className = 'visible';
+      if (flux.readyState === 2 && !repriseProgrammee) {
+        repriseProgrammee = setTimeout(brancher, delaiReprise);
+        delaiReprise = Math.min(delaiReprise * 2, 30000);
+      }
     };
   }
 
