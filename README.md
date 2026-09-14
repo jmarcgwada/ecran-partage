@@ -51,7 +51,7 @@ un prénom est faux, on corrige le champ.
 
 ### Le tour de parole
 
-Un **réglage**, pas une hiérarchie (§5), qui se bascule depuis `/animateur` :
+Un **réglage**, pas une hiérarchie (§5), que l'animateur bascule depuis son téléphone :
 
 - **main libre** — le cas par défaut. Chacun affiche ce qu'il veut et tourne les
   pages. Sur une réunion à trois, c'est ce qu'on veut : personne n'a envie de
@@ -62,6 +62,32 @@ Un **réglage**, pas une hiérarchie (§5), qui se bascule depuis `/animateur` :
 
 **Déposer n'a jamais rien à voir avec la main** : on prépare son document
 pendant que quelqu'un d'autre présente.
+
+### L'animateur
+
+Un participant parmi les autres, qui **revendique** le rôle depuis son téléphone
+(« Je mène la réunion »). Le premier qui le fait l'obtient, et **lui seul
+administre** : tour de parole, main, retrait d'un document, confort de l'écran,
+fin de réunion. Son pupitre n'apparaît que sur son téléphone.
+
+- Il peut **confier la réunion** à un autre participant, ou ne plus la mener.
+- **Son nom s'affiche à l'écran** — c'est la vraie protection contre une prise
+  de rôle abusive : elle se voit de toute la salle.
+- Il **pilote toujours** l'écran, même quand quelqu'un d'autre a la main.
+- **Le secours** : sans signe de vie de son téléphone pendant dix minutes, le
+  rôle redevient revendicable — sans quoi un téléphone perdu bloquerait la
+  réunion. Tant que personne ne l'a repris, le moindre signe de vie le lui rend.
+  À savoir : un téléphone verrouillé suspend sa page, donc ses signes de vie.
+
+Personne ne mène la réunion au départ, et elle fonctionne très bien ainsi.
+
+### Un retardataire
+
+**« Inviter quelqu'un »**, sur chaque téléphone : le QR code s'affiche sur le
+téléphone, qu'on tend à la personne qui arrive. La présentation en cours n'est
+pas interrompue. L'animateur peut aussi remettre le QR code plein écran depuis
+son téléphone, et le petit QR code de la barre du bas reste scannable en
+s'approchant.
 
 ### Les vidéos, et leurs limites
 
@@ -87,7 +113,7 @@ avant de le découper. C'est le prix de l'absence de dépendance npm.
 
 ### Le confort de l'écran
 
-Réglable depuis `/animateur`, poussé à l'écran par le flux, sans rien rouvrir :
+Réglable depuis le téléphone de l'animateur, poussé à l'écran par le flux, sans rien rouvrir :
 
 - **Luminosité des documents.** Une page blanche sur un vidéoprojecteur, lumière
   éteinte, éblouit. On atténue l'image plutôt que de l'inverser : inverser
@@ -120,7 +146,7 @@ documents, pas le contenu vivant d'un portable.
 
 Le §9 ne souffre pas d'exception : une réunion terminée ne laisse rien.
 
-- **« Terminer la réunion »**, depuis `/animateur` : les fichiers quittent le
+- **« Terminer la réunion »**, depuis le téléphone de l'animateur : les fichiers quittent le
   disque, un nouveau code est tiré, l'écran revient au QR code d'accueil.
 - **Le démarrage efface tout** et tire un nouveau code. Conséquence à connaître :
   redémarrer le conteneur met fin à la réunion en cours.
@@ -165,7 +191,6 @@ navigateur** et non un protocole de diffusion (§3.1), les documents deviennent
 | --- | --- |
 | `/scene` | l'écran de la salle, à ouvrir en plein écran une fois pour toutes |
 | `/salle/<code>` | les participants — c'est là que mène le QR code |
-| `/animateur` | celui qui mène : tour de parole, main, retrait d'un document, fin de réunion |
 | `/` | celui qui installe l'écran : un lien vers `/scene`, rien d'autre |
 | `/api/etat` | l'état public, pour déboguer d'un coup de `curl` |
 | `/api/afficher` | remettre un document à l'écran — `POST`, code de salle exigé |
@@ -286,7 +311,7 @@ si l'écran ouvre `http://localhost:8802/scene`, le QR code mènera les téléph
 sur *leur* localhost, c'est-à-dire nulle part.
 
 Dès que l'écran et les téléphones ne voient pas le serveur par la même adresse,
-réglez-la : `http://192.168.0.10:8802`.
+réglez-la : `http://192.0.2.10:8802`.
 
 ---
 

@@ -188,7 +188,7 @@ export function rendreLaMain(participantId) {
 }
 
 // Le geste de l'animateur : donner la main a quelqu'un, ou la liberer. Ne
-// demande l'accord de personne — c'est tout l'objet de la page /animateur.
+// demande l'accord de personne — c'est tout l'objet du role d'animateur.
 export function donnerLaMain(participantId) {
   if (participantId && !salle.participants.some((p) => p.id === participantId)) return false;
   salle.mainA = participantId || null;

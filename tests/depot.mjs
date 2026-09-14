@@ -745,7 +745,7 @@ const fauxCode = String((Number(codeActuel) + 1) % 10000).padStart(4, '0');
 
 // Le reseau de la salle, d'abord : rien n'y change, l'ecran doit continuer de
 // lire l'etat sans rien prouver.
-const local = await porte('/api/etat', { hote: '192.168.0.48:8802', xff: '' });
+const local = await porte('/api/etat', { hote: '192.0.2.10:8802', xff: '' });
 verifier('sur le réseau de la salle, l’état se lit toujours sans code',
   local.statut === 200 && local.corps.includes(codeActuel));
 
@@ -803,10 +803,10 @@ verifier('une autre adresse n’est pas pénalisée',
 // locale, un doigt qui fourche y bloquerait tout le monde.
 acces.toutOublier();
 for (let i = 0; i < reglagesPorte.codesFauxMax + 5; i += 1) {
-  await porte('/api/presence?code=' + fauxCode, { hote: '192.168.0.48:8802', xff: '', methode: 'POST' });
+  await porte('/api/presence?code=' + fauxCode, { hote: '192.0.2.10:8802', xff: '', methode: 'POST' });
 }
 verifier('les codes faux du réseau local ne bloquent personne',
-  (await porte('/api/etat', { hote: '192.168.0.48:8802', xff: '' })).statut === 200);
+  (await porte('/api/etat', { hote: '192.0.2.10:8802', xff: '' })).statut === 200);
 
 // Sans adresse publique declaree, on ne sait pas distinguer : tout passage par
 // un proxy est tenu pour venu du dehors. C'est le choix prudent.

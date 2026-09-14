@@ -59,7 +59,8 @@ const defauts = {
   // Zero par defaut, et ce n'est pas de la timidite : une discussion de vingt
   // minutes sur une meme diapositive est le cas NORMAL d'une reunion. Escamoter
   // le document sous le nez de ceux qui en parlent serait pire que le mal.
-  // Le reglage s'active depuis /animateur, en connaissance de cause.
+  // Le reglage s'active depuis le telephone de l'animateur, en connaissance de
+  // cause.
   retourAccueilMinutes: Number(process.env.ECR_RETOUR_ACCUEIL_MINUTES) || 0,
 
   // Le secours du role d'animateur : s'il part ou perd son telephone, le role
