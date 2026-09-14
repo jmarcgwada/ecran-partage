@@ -39,6 +39,7 @@ import {
   transmettreAnimation, quitterAnimation,
 } from './salle.js';
 import { ouvrirFlux } from './flux.js';
+import { routerInstallation } from './installation.js';
 import {
   adresseDuClient, etatDesEssais, noterEchec, jetonJuste,
 } from './acces.js';
@@ -200,11 +201,13 @@ function pageSansJeton(res, jetonFaux) {
     : 'Il manque le jeton de l’écran';
   const explication = jetonFaux
     ? 'Le jeton présent dans l’adresse n’est pas, ou plus, le bon. S’il a été '
-      + 'changé, la nouvelle adresse de l’écran se trouve dans le journal du service, sur le NAS.'
+      + 'changé, la nouvelle adresse se trouve sur la page <code>/installer</code> du service, '
+      + 'depuis un appareil de votre réseau Tailscale.'
     : 'L’écran de la salle s’ouvre avec son adresse complète, qui se '
       + 'termine par <code>?jeton=…</code>. Vérifiez que l’adresse n’a pas été coupée en la '
-      + 'recopiant : tout ce qui suit <code>?jeton=</code> en fait partie. Elle se trouve '
-      + 'dans le journal du service, sur le NAS.';
+      + 'recopiant : tout ce qui suit <code>?jeton=</code> en fait partie. Pour la '
+      + 'retrouver, ouvrez la page <code>/installer</code> du service depuis un appareil de '
+      + 'votre réseau Tailscale.';
 
   const html = `<!doctype html>
 <html lang="fr"><head><meta charset="utf-8">
@@ -606,9 +609,9 @@ export function creerGestionnaire() {
       // Un jeton faux n'est ni compte comme un echec, ni juge ensuite comme un
       // code : il est simplement refuse. Le compter pourrait bloquer une salle
       // entiere a cause d'un ecran reste sur un ancien jeton.
+      const jetonPresente = url.searchParams.get('jeton');
+      const ecran = jetonJuste(jetonPresente);
       {
-        const jetonPresente = url.searchParams.get('jeton');
-        const ecran = jetonJuste(jetonPresente);
 
         if (chemin === '/scene' && !ecran) return pageSansJeton(res, Boolean(jetonPresente));
         if (!ecran && (chemin === '/api/etat' || chemin === '/api/flux' || chemin === '/api/qr.svg')) {
@@ -618,7 +621,13 @@ export function creerGestionnaire() {
         }
       }
 
-      if (chemin === '/api/flux' && req.method === 'GET') return ouvrirFlux(req, res);
+      if (chemin === '/api/flux' && req.method === 'GET') return ouvrirFlux(req, res, { ecran });
+
+      // La page d'installation : l'adresse de l'ecran pour qui l'installe, par
+      // Tailscale ou depuis le NAS seulement (voir installation.js).
+      if (chemin === '/installer' || chemin.startsWith('/installer/')) {
+        return await routerInstallation(req, res, chemin);
+      }
       if (chemin === '/api/etat' && req.method === 'GET') {
         return json(res, 200, {
           ...etatPublic(),

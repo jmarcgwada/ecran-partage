@@ -229,8 +229,9 @@ dans la liste. La conversion s'éprouve dans le conteneur (voir plus bas).
 docker compose up -d --build
 ```
 
-Puis, sur l'écran de la salle, ouvrir en plein écran l'adresse **avec son jeton**
-que donne le journal du conteneur.
+Puis, depuis un appareil de votre réseau Tailscale, ouvrir **`/installer`** par
+l'adresse Tailscale du NAS : la page donne l'adresse de l'écran, prête à copier.
+Sur l'écran de la salle, l'ouvrir en plein écran et la mettre en favori.
 
 ### Sur Internet
 
@@ -255,19 +256,26 @@ un **jeton d'écran**, en local comme par Internet :
 https://<adresse publique>/scene?jeton=<jeton>
 ```
 
-L'adresse complète s'affiche **dans le journal du conteneur**, au démarrage, dès
-que l'adresse publique est réglée — et **nulle part ailleurs** :
+**Pour l'obtenir : la page `/installer`**, ouverte par l'adresse Tailscale du NAS.
+Elle donne l'adresse de l'écran avec un bouton « Copier », et permet de changer
+le jeton. Elle n'existe que pour un **accès direct** — par Tailscale ou depuis le
+NAS. Par Internet comme depuis le Wi-Fi du magasin, elle est introuvable.
 
-```
-[http]   l'écran par l'adresse publique : https://…/scene?jeton=…
-```
+Ce qui distingue un accès direct (`src/installation.js`), mesuré sur le NAS :
+aucun en-tête de proxy (DSM en ajoute toujours un), pas le nom public, une
+connexion venue de la boucle locale ou de Docker, et un nom d'hôte qui est une
+adresse IP ou un nom `*.ts.net` — contre le « DNS rebinding ». Cela suppose le
+port publié sur la boucle locale, comme dans le `docker-compose.yml`.
+
+L'adresse s'affiche aussi dans le journal du conteneur, au démarrage.
 
 - **Jamais sur un téléphone**, pas même celui de l'animateur : n'importe qui peut
   devenir animateur, et le jeton ouvre *toutes* les réunions à venir, pas
   seulement la sienne.
 - **Durable** : il vit dans `data/jeton-ecran` et survit aux redémarrages — un
-  écran s'ouvre une fois pour toutes. **Pour en changer**, supprimer ce fichier et
-  redémarrer ; l'ancienne adresse cesse aussitôt de fonctionner.
+  écran s'ouvre une fois pour toutes. **Pour en changer** : bouton « Changer le
+  jeton » de `/installer`. L'ancienne adresse cesse aussitôt de fonctionner, et
+  un écran déjà branché avec elle est coupé.
 - **Hors de la limite des codes faux** : dans une salle, l'écran et les téléphones
   sortent souvent par la même adresse Internet, et dix fautes de frappe d'un
   participant ne doivent pas éteindre l'écran. Sans risque : 256 bits ne se

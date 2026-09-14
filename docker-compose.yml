@@ -2,7 +2,8 @@
 # ECRAN PARTAGE
 #
 #   /scene?jeton=...                a ouvrir en plein ecran dans la salle —
-#                                   l'adresse complete est dans le journal
+#                                   l'adresse complete : page /installer,
+#                                   par Tailscale
 #   http://<nas>:8802/salle/<code>  ou menent les QR codes
 #
 # Le cahier voulait ce service hors d'Internet (§9.3). Il y est desormais, par

@@ -169,6 +169,16 @@ export function jetonJuste(propose) {
   return crypto.timingSafeEqual(a, b);
 }
 
+// Changer le jeton : un nouveau, ecrit sur le disque, et l'ancien refuse des la
+// requete suivante. Depuis la page d'installation (installation.js), qui coupe
+// aussi les ecrans deja branches avec l'ancien.
+export function changerJeton() {
+  jetonEnMemoire = crypto.randomBytes(32).toString('base64url');
+  fs.mkdirSync(dossierDonnees, { recursive: true });
+  fs.writeFileSync(fichierJeton(), jetonEnMemoire, { mode: 0o600 });
+  return jetonEnMemoire;
+}
+
 // Pour le banc d'essai : oublier le jeton en memoire, comme un redemarrage.
 export function oublierJetonEnMemoire() {
   jetonEnMemoire = null;

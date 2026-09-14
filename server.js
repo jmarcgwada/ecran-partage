@@ -39,6 +39,7 @@ serveur.listen(port, () => {
   // du conteneur est le SEUL endroit ou il se lit — jamais sur un telephone.
   console.log(`[http]   l'écran de la salle : http://localhost:${port}/scene?jeton=${jetonEcran()}`);
   console.log(`[http]   code de salle       : ${code}`);
+  console.log(`[http]   installation        : /installer, par Tailscale ou depuis le NAS`);
   if (!reglages.adressePublique) {
     console.log("[http]   adresse publique non réglée : le QR code encodera l'adresse par laquelle l'écran a ouvert la page");
   } else {

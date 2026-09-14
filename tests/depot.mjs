@@ -974,6 +974,107 @@ verifier('une réunion oubliée finit par être effacée',
   salleModule.effacerSiOubliee() === true);
 verifier('et son disque avec elle', fs.readdirSync(dossierReunion).length === 0);
 
+// --- La page d'installation ------------------------------------------------
+//
+// Elle donne l'adresse de l'ecran, jeton compris. Tout repose donc sur UNE
+// question : qui la voit ? Un acces direct (Tailscale, le NAS), et personne
+// d'autre. Placee EN DERNIER : elle change le jeton, dont le reste du banc se sert.
+
+const { accesDirect } = await import('../src/installation.js');
+const faux = (host, remote, entetes = {}) => ({ headers: { host, ...entetes }, socket: { remoteAddress: remote } });
+reglagesBanc.adressePublique = 'https://ecran.exemple.fr';
+
+verifier('par Tailscale (adresse IP, passerelle Docker, sans proxy) : accès direct',
+  accesDirect(faux('100.64.1.2:8802', '172.17.0.1')) === true);
+verifier('par un nom Tailscale en .ts.net : accès direct',
+  accesDirect(faux('nas.tail1234.ts.net:8802', '172.17.0.1')) === true);
+verifier('par Internet (le proxy ajoute X-Forwarded-For) : refusé',
+  accesDirect(faux('ecran.exemple.fr', '172.17.0.1', { 'x-forwarded-for': '203.0.113.9' })) === false);
+verifier('sous le nom public, même sans en-tête de proxy : refusé',
+  accesDirect(faux('ecran.exemple.fr', '172.17.0.1')) === false);
+verifier('un appareil du Wi-Fi du magasin, arrivé sous sa propre adresse : refusé',
+  accesDirect(faux('192.0.2.10:8802', '10.20.30.40')) === false);
+verifier('un nom d’hôte quelconque (DNS rebinding) : refusé',
+  accesDirect(faux('piege.exemple.com:8802', '127.0.0.1')) === false);
+verifier('un X-Real-IP ou un Forwarded suffit à refuser',
+  accesDirect(faux('100.64.1.2:8802', '172.17.0.1', { 'x-real-ip': '1.2.3.4' })) === false
+  && accesDirect(faux('100.64.1.2:8802', '172.17.0.1', { forwarded: 'for=1.2.3.4' })) === false);
+
+const demander = (chemin, { hote = '192.0.2.10:8802', methode = 'GET', entetes = {}, corps = '' } = {}) =>
+  new Promise((resoudre) => {
+    const requete = http.request({
+      host: '127.0.0.1', port, path: chemin, method: methode, headers: { host: hote, ...entetes },
+    }, (r) => {
+      let texte = '';
+      r.setEncoding('utf8');
+      r.on('data', (m) => { texte += m; });
+      r.on('end', () => resoudre({ statut: r.statusCode, corps: texte }));
+    });
+    requete.on('error', () => resoudre({ statut: 0, corps: '' }));
+    requete.end(corps);
+  });
+
+const jetonAvant = acces.jetonEcran();
+const pageDirecte = await demander('/installer');
+verifier('en accès direct, la page d’installation s’ouvre et donne l’adresse de l’écran',
+  pageDirecte.statut === 200 && pageDirecte.corps.includes('/scene?jeton=' + encodeURIComponent(jetonAvant)),
+  String(pageDirecte.statut));
+verifier('elle donne l’adresse publique de l’écran, pas seulement celle de Tailscale',
+  pageDirecte.corps.includes('https://ecran.exemple.fr/scene?jeton='));
+
+const parInternet = await demander('/installer', { hote: 'ecran.exemple.fr', entetes: { 'x-forwarded-for': '203.0.113.9' } });
+verifier('depuis Internet, la page est introuvable — et ne laisse pas passer le jeton',
+  parInternet.statut === 404 && !parInternet.corps.includes(jetonAvant), String(parInternet.statut));
+verifier('un X-Forwarded-For forgé sur un accès direct suffit à la fermer',
+  (await demander('/installer', { entetes: { 'x-forwarded-for': '100.64.1.2' } })).statut === 404);
+
+// Changer le jeton : seulement en JSON, et depuis la page elle-meme.
+const parFormulaire = await demander('/installer/jeton', {
+  methode: 'POST', entetes: { 'content-type': 'application/x-www-form-urlencoded' }, corps: 'x=1',
+});
+verifier('un formulaire envoyé par une autre page ne change pas le jeton',
+  parFormulaire.statut === 415 && acces.jetonEcran() === jetonAvant, String(parFormulaire.statut));
+const autreOrigine = await demander('/installer/jeton', {
+  methode: 'POST', entetes: { 'content-type': 'application/json', origin: 'https://piege.exemple.com' }, corps: '{}',
+});
+verifier('une requête venue d’une autre origine ne change pas le jeton',
+  autreOrigine.statut === 403 && acces.jetonEcran() === jetonAvant, String(autreOrigine.statut));
+verifier('depuis Internet, le changement de jeton est introuvable',
+  (await demander('/installer/jeton', {
+    methode: 'POST', hote: 'ecran.exemple.fr',
+    entetes: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.9' }, corps: '{}',
+  })).statut === 404 && acces.jetonEcran() === jetonAvant);
+
+// Un ecran branche avec l'ancien jeton doit etre coupe au changement.
+const ecranBranche = new Promise((resoudre) => {
+  const requete = http.get({
+    host: '127.0.0.1', port, path: '/api/flux?jeton=' + encodeURIComponent(jetonAvant),
+    headers: { host: '192.0.2.10:8802' },
+  }, (r) => {
+    r.resume();
+    const minuterie = setTimeout(() => { requete.destroy(); resoudre(false); }, 5000);
+    r.on('end', () => { clearTimeout(minuterie); resoudre(true); });
+    r.on('close', () => { clearTimeout(minuterie); resoudre(true); });
+  });
+  requete.on('error', () => resoudre(true));
+});
+await new Promise((r) => setTimeout(r, 200));
+
+const changement = await demander('/installer/jeton', {
+  methode: 'POST', entetes: { 'content-type': 'application/json', origin: 'http://192.0.2.10:8802' }, corps: '{}',
+});
+const jetonApres = acces.jetonEcran();
+verifier('depuis la page, le jeton change', changement.statut === 200 && jetonApres !== jetonAvant, String(changement.statut));
+verifier('l’écran branché avec l’ancien jeton est coupé', await ecranBranche);
+verifier('l’ancienne adresse de l’écran ne s’ouvre plus',
+  (await demander('/scene?jeton=' + encodeURIComponent(jetonAvant))).statut === 403);
+verifier('la nouvelle, si',
+  (await demander('/scene?jeton=' + encodeURIComponent(jetonApres))).statut === 200);
+verifier('et le nouveau jeton est enregistré sur le disque',
+  fs.readFileSync(path.join(dossier, 'jeton-ecran'), 'utf8').trim() === jetonApres);
+
+reglagesBanc.adressePublique = '';
+
 // --- Fin --------------------------------------------------------------------
 
 flux.fermer();
