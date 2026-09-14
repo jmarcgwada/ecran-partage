@@ -240,7 +240,7 @@ des téléphones en 4G rejoignent la réunion — à condition de passer par le
 
 1. un nom de domaine qui pointe vers la box ;
 2. dans DSM : un certificat Let's Encrypt pour ce nom, une règle de proxy
-   inverse `https://<nom>:443` → `http://<nas>:8802`, et **l'association du
+   inverse `https://<nom>:443` → `http://127.0.0.1:8802`, et **l'association du
    certificat à ce service** (oubliée, DSM sert le certificat du NAS et le
    navigateur refuse) ;
 3. **ensuite seulement**, l'adresse publique dans `data/reglages.json` —
@@ -315,9 +315,14 @@ directement le port du service** (le Wi-Fi du magasin, par exemple) peut écrire
 lui-même un `X-Forwarded-For`, s'inventer une adresse à chaque essai et deviner
 le code en une minute. Aucune marque du proxy n'est infalsifiable.
 
-La parade : ne publier le port que sur la boucle locale du NAS
-(`127.0.0.1:8802:8802`), pour que **tout passe obligatoirement par DSM**, dont
-l'en-tête fait foi. Dans cet ordre, pour ne jamais couper le service :
+La parade, **appliquée dans le `docker-compose.yml`** : ne publier le port que
+sur la boucle locale du NAS (`127.0.0.1:8802:8802`), pour que **tout passe
+obligatoirement par DSM**. Son en-tête fait foi : sa configuration ajoute
+l'adresse réelle du client (`$proxy_add_x_forwarded_for`), et le service lit la
+dernière entrée. Vérifié : le port refuse désormais toute connexion depuis le
+réseau local, et l'adresse publique répond.
+
+Pour une installation neuve, dans cet ordre, pour ne jamais couper le service :
 
 1. dans DSM, changer la destination du proxy inverse pour `http://127.0.0.1:8802`
    (cela fonctionne tout de suite, la boucle locale étant déjà incluse) ;

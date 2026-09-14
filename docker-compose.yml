@@ -30,7 +30,22 @@ services:
     network_mode: bridge
 
     ports:
-      - "8802:8802"
+      # Sur la BOUCLE LOCALE du NAS seulement, et non sur toutes ses interfaces.
+      #
+      # Tout doit passer par le proxy inverse de DSM, dont l'en-tete
+      # X-Forwarded-For fait foi : il AJOUTE l'adresse reelle du client
+      # ($proxy_add_x_forwarded_for, lu dans sa configuration). Un appareil qui
+      # atteindrait le port directement pourrait ecrire cet en-tete lui-meme,
+      # s'inventer une adresse a chaque essai et deviner le code de salle en une
+      # minute — le conteneur voit toutes les connexions directes arriver de la
+      # meme passerelle Docker, il ne peut pas les distinguer.
+      #
+      # AVANT de publier le port ainsi, la destination du proxy DSM doit etre
+      # http://127.0.0.1:8802 — sinon l'adresse publique tombe. Voir le README.
+      #
+      # Consequence : l'ecran du magasin passe lui aussi par l'adresse publique.
+      # Tailscale continue de joindre le port.
+      - "127.0.0.1:8802:8802"
 
     volumes:
       # Les reglages, et les documents de la reunion EN COURS. Ce dossier est
