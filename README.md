@@ -292,7 +292,8 @@ ensuite sans code. La porte publique (`src/acces.js`) :
 - se reconnaît au **nom d'hôte** demandé, et non à l'adresse de la prise —
   derrière le proxy tout semble venir du NAS ;
 - refuse l'état, le flux et le QR code sans le code (le QR code *encode* le
-  code) ; rend l'écran de la salle introuvable ;
+  code) ; n'ouvre l'écran de la salle qu'avec son jeton, et dit sinon ce qui
+  manque ;
 - limite les codes faux : dix par adresse en dix minutes, puis attente — et
   une adresse bloquée n'apprend plus rien, même en visant juste ;
 - identifie le client par la **dernière** entrée de `X-Forwarded-For`, celle

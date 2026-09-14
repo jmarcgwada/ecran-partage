@@ -9,8 +9,9 @@
 # rend possible, c'est la PORTE PUBLIQUE (src/acces.js) — depuis Internet rien
 # ne se lit sans le code de salle, et les codes faux sont limites. Voir le README.
 #
-# L'ecran de la salle, lui, s'ouvre TOUJOURS par l'adresse locale : il n'a pas
-# de code a presenter, et /scene est introuvable depuis Internet.
+# L'ecran de la salle n'a pas de code a presenter. Sur le reseau local il
+# s'ouvre tel quel ; par l'adresse publique il presente un JETON — voir le
+# README. Sans jeton, /scene explique ce qui manque et n'ouvre rien.
 # ============================================================================
 
 services:

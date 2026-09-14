@@ -187,6 +187,56 @@ function jugerLeCode(req, propose) {
   return 'faux';
 }
 
+// L'ecran ouvert par l'adresse publique SANS son jeton, ou avec un jeton faux.
+//
+// Un « Introuvable » muet laissait croire a une panne alors qu'il manquait
+// seulement la fin de l'adresse — recopiee a la main, elle se tronque vite. Ce
+// message ne devoile rien : le fonctionnement est decrit dans le depot public.
+// Il ne renvoie JAMAIS le jeton propose, ni le vrai, ni le code de la salle.
+//
+// 403 et non 404 : la page existe, il manque le droit de l'ouvrir.
+function pageSansJeton(res, jetonFaux) {
+  const titre = jetonFaux
+    ? 'Ce jeton d’écran n’est pas valide'
+    : 'Il manque le jeton de l’écran';
+  const explication = jetonFaux
+    ? 'Le jeton présent dans l’adresse n’est pas, ou plus, le bon. S’il a été '
+      + 'changé, la nouvelle adresse de l’écran se trouve dans le journal du service, sur le NAS.'
+    : 'Par Internet, l’écran de la salle s’ouvre avec son adresse complète, qui se '
+      + 'termine par <code>?jeton=…</code>. Vérifiez que l’adresse n’a pas été coupée en la '
+      + 'recopiant : tout ce qui suit <code>?jeton=</code> en fait partie. Elle se trouve '
+      + 'dans le journal du service, sur le NAS.';
+
+  const html = `<!doctype html>
+<html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Écran Partagé — ${titre}</title>
+<style>
+  html,body{margin:0;height:100%;background:#0b0d10;color:#f2f4f7;
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  main{min-height:100%;display:flex;flex-direction:column;justify-content:center;
+    max-width:40rem;margin:0 auto;padding:2rem;box-sizing:border-box}
+  h1{font-size:1.6rem;margin:0 0 1rem}
+  p{color:#c3cad4;line-height:1.55;margin:0 0 1rem}
+  code{background:#1a2029;padding:.1rem .35rem;border-radius:.3rem;color:#4da3ff}
+  .participant{margin-top:1.2rem;padding-top:1.2rem;border-top:1px solid #232a34;color:#8a93a0}
+</style></head>
+<body><main>
+  <h1>${titre}</h1>
+  <p>${explication}</p>
+  <p class="participant">Vous êtes participant à la réunion ? Cette page n’est pas
+  pour vous : scannez le QR code affiché sur l’écran de la salle.</p>
+</main></body></html>`;
+
+  res.writeHead(403, {
+    'content-type': 'text/html; charset=utf-8',
+    'content-length': Buffer.byteLength(html),
+    'cache-control': 'no-store',
+  });
+  return res.end(html);
+}
+
 function refusDeCode(res, verdict, options) {
   if (verdict && verdict.bloque) {
     return erreur(res, 429,
@@ -551,7 +601,7 @@ export function creerGestionnaire() {
       //
       // L'ecran de la salle, lui, n'a pas de code a presenter — c'est lui qui
       // l'affiche. Par la porte publique, il presente le JETON DE L'ECRAN (voir
-      // acces.js) ; sans ce jeton, /scene est introuvable.
+      // acces.js) ; sans ce jeton, /scene explique ce qui manque (403).
       //
       // Un jeton faux n'est ni compte comme un echec, ni juge ensuite comme un
       // code : il est simplement refuse. Le compter pourrait bloquer une salle
@@ -560,10 +610,7 @@ export function creerGestionnaire() {
         const jetonPresente = url.searchParams.get('jeton');
         const ecran = jetonJuste(jetonPresente);
 
-        if (chemin === '/scene' && !ecran) {
-          res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
-          return res.end('Introuvable');
-        }
+        if (chemin === '/scene' && !ecran) return pageSansJeton(res, Boolean(jetonPresente));
         if (!ecran && (chemin === '/api/etat' || chemin === '/api/flux' || chemin === '/api/qr.svg')) {
           if (jetonPresente) return erreur(res, 403, "Jeton d'écran invalide.");
           const verdict = jugerLeCode(req, url.searchParams.get('code'));

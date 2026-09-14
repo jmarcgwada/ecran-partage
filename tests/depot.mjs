@@ -762,8 +762,15 @@ verifier('depuis Internet, le flux ne s’ouvre pas sans le code',
 // serait la meme fuite par une autre porte.
 verifier('depuis Internet, le QR code ne se sert pas sans le code',
   (await porte('/api/qr.svg')).statut === 403);
-verifier('depuis Internet, l’écran de la salle est introuvable',
-  (await porte('/scene')).statut === 404);
+// L'ecran sans jeton explique ce qui manque, au lieu d'un « Introuvable »
+// muet qui faisait croire a une panne. Mais il ne laisse RIEN passer.
+const sceneSansJeton = await porte('/scene');
+verifier('depuis Internet, l’écran ne s’ouvre pas sans jeton',
+  sceneSansJeton.statut === 403, String(sceneSansJeton.statut));
+verifier('et il dit ce qui manque, en clair',
+  /manque le jeton/.test(sceneSansJeton.corps) && /\?jeton=/.test(sceneSansJeton.corps));
+verifier('sans rien laisser passer de la réunion',
+  !sceneSansJeton.corps.includes(codeActuel) && !/EventSource|\/api\//.test(sceneSansJeton.corps));
 
 verifier('avec le bon code, l’état se lit depuis Internet',
   (await porte('/api/etat?code=' + codeActuel)).statut === 200);
@@ -810,10 +817,14 @@ verifier('une autre adresse n’est pas pénalisée',
 const jeton = acces.jetonEcran();
 verifier('le jeton de l’écran est long, et ne se devine pas', jeton.length >= 40, String(jeton.length));
 
-verifier('sans jeton, l’écran reste introuvable depuis Internet',
-  (await porte('/scene')).statut === 404);
-verifier('avec un jeton faux, aussi',
-  (await porte('/scene?jeton=' + 'x'.repeat(43))).statut === 404);
+verifier('sans jeton, l’écran ne s’ouvre toujours pas depuis Internet',
+  (await porte('/scene')).statut === 403);
+const sceneFauxJeton = await porte('/scene?jeton=' + 'x'.repeat(43));
+verifier('avec un jeton faux non plus, et le message le dit',
+  sceneFauxJeton.statut === 403 && /pas valide/.test(sceneFauxJeton.corps));
+// Le message ne renvoie ni le jeton propose, ni le vrai.
+verifier('le message ne répète aucun jeton',
+  !sceneFauxJeton.corps.includes('x'.repeat(43)) && !sceneFauxJeton.corps.includes(jeton));
 
 verifier('l’adresse 203.0.113.7 est bien bloquée à ce moment-là',
   (await porte('/api/etat?code=' + codeActuel)).statut === 429);
