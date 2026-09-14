@@ -44,6 +44,12 @@
   // commandes plutot qu'a laisser cliquer pour se faire refuser.
   var jePilote = true;
 
+  // Vrai si CE telephone mene la reunion. Recalcule a chaque etat recu.
+  var jeMene = false;
+  // L'adresse de la salle, pour l'invitation. Elle ne voyage pas dans le
+  // flux : seule la reponse de /api/etat la donne.
+  var adresseSalle = '';
+
   var limites = { tailleMaxMo: 50, fichiersMax: 10 };
   var mesDocuments = {};
   var dernierEtat = null;
@@ -104,6 +110,15 @@
     return (octets / (1024 * 1024)).toFixed(1).replace('.', ',');
   }
 
+  // La meme liste que documents.js cote serveur. Dupliquee, faute de mieux :
+  // cette page n'importe rien, elle doit tourner dans un vieux navigateur.
+  var EXTENSIONS_VIDEO = ['.mp4', '.m4v', '.webm', '.ogv', '.mov', '.mkv'];
+
+  function estUneVideo(nom) {
+    var point = String(nom).lastIndexOf('.');
+    return point >= 0 && EXTENSIONS_VIDEO.indexOf(String(nom).slice(point).toLowerCase()) >= 0;
+  }
+
   function dire(texte, genre) {
     message.textContent = texte;
     message.className = texte ? 'visible ' + genre : '';
@@ -123,9 +138,16 @@
 
     // On refuse ici ce que le serveur refuserait de toute facon : inutile de
     // faire monter quarante mega-octets pour s'entendre dire non a la fin.
+    //
+    // Chaque fichier a SA limite, comme cote serveur. La premiere version de
+    // ce controle appliquait celle des documents a tout : une video de 150 Mo,
+    // que le serveur aurait acceptee, etait refusee ici avant meme de partir.
     for (var i = 0; i < fichiers.length; i++) {
-      if (fichiers[i].size > limites.tailleMaxMo * 1024 * 1024) {
-        return dire('« ' + fichiers[i].name +' » dépasse ' + limites.tailleMaxMo + ' Mo.', 'erreur');
+      var plafond = estUneVideo(fichiers[i].name)
+        ? (limites.tailleMaxVideoMo || limites.tailleMaxMo)
+        : limites.tailleMaxMo;
+      if (fichiers[i].size > plafond * 1024 * 1024) {
+        return dire('« ' + fichiers[i].name + ' » dépasse ' + plafond + ' Mo.', 'erreur');
       }
     }
 
@@ -209,9 +231,12 @@
     // Retenu pour pouvoir redessiner la liste sans attendre le flux — au
     // changement d'utilisateur, par exemple.
     dernierEtat = etat;
+    if (etat.adresse) adresseSalle = etat.adresse;
     document.getElementById('code').textContent = etat.code;
     document.getElementById('nom-salle').textContent = etat.nomSalle || '';
-    // La main d'abord : elle décide si les commandes sont actives.
+    // L'animation d'abord : elle décide des boutons de retrait de la liste.
+    majAnimation(etat);
+    // Puis la main : elle décide si les commandes sont actives.
     majMain(etat);
     majCommande(etat);
 
@@ -282,6 +307,15 @@
 
       ligne.appendChild(titre);
       ligne.appendChild(action);
+      if (jeMene) {
+        var retrait = document.createElement('button');
+        retrait.type = 'button';
+        retrait.className = 'retirer';
+        retrait.textContent = 'Retirer';
+        retrait.setAttribute('data-retirer', doc.id);
+        retrait.setAttribute('data-nom', doc.nom);
+        ligne.appendChild(retrait);
+      }
       liste.appendChild(ligne);
     }
 
@@ -323,7 +357,8 @@
 
     sectionMain.hidden = false;
     var aMoi = !!(etat.mainA && etat.mainA === moi());
-    jePilote = aMoi;
+    // L'animateur pilote toujours, meme quand quelqu'un d'autre a la main.
+    jePilote = aMoi || !!(etat.animateur && etat.animateur === moi());
 
     var porteur = null;
     for (var i = 0; i < (etat.participants || []).length; i++) {
@@ -467,6 +502,272 @@
 
   // Le meme flux que l'ecran de la salle : la liste se remplit sous les yeux
   // de tout le monde, sans que personne ait a rafraichir sa page.
+
+  // --- L'animation ------------------------------------------------------------
+  //
+  // Un participant revendique le rôle depuis son téléphone ; lui seul
+  // administre. Tout ce qui suit ne s'affiche que sur SON téléphone.
+
+  var sectionAnimation = document.getElementById('animation');
+  var messageAnimation = document.getElementById('message-animation');
+  var menerEtat = document.getElementById('mener-etat');
+  var messageMener = document.getElementById('message-mener');
+  var boutonRevendiquer = document.getElementById('revendiquer');
+  var boutonQuitter = document.getElementById('quitter');
+  var regime = document.getElementById('regime');
+  var boutonBasculer = document.getElementById('basculer');
+  var boutonLiberer = document.getElementById('liberer');
+  var listeParticipants = document.getElementById('participants');
+  var curseur = document.getElementById('luminosite');
+  var valeurLuminosite = document.getElementById('luminosite-valeur');
+  var choixRetour = document.getElementById('retour');
+
+  function direDans(ou, texte, genre) {
+    ou.textContent = texte;
+    ou.className = texte ? 'visible ' + genre : '';
+  }
+
+  // Une commande : le code de salle dans l'adresse, et TOUJOURS l'identifiant
+  // de celui qui parle dans « participant ». La personne visée, s'il y en a
+  // une, s'appelle « cible » — le serveur refuserait qu'on se désigne soi-même
+  // pour se donner des droits.
+  function commander(chemin, corps, ou, ensuite) {
+    corps.participant = moi();
+    var requete = new XMLHttpRequest();
+    requete.open('POST', chemin + '?code=' + encodeURIComponent(code));
+    requete.setRequestHeader('content-type', 'application/json');
+    requete.onload = function () {
+      var reponse = {};
+      try { reponse = JSON.parse(requete.responseText); } catch (err) { /* défaut */ }
+      if (requete.status !== 200) {
+        return direDans(ou, reponse.erreur || 'La commande a échoué.', 'erreur');
+      }
+      direDans(ou, '', '');
+      if (ensuite) ensuite(reponse);
+    };
+    requete.onerror = function () {
+      direDans(ou, 'Connexion interrompue. Êtes-vous toujours sur le réseau de la salle ?', 'erreur');
+    };
+    requete.send(JSON.stringify(corps));
+  }
+
+  function majAnimation(etat) {
+    var monId = moi();
+    jeMene = !!(etat.animateur && monId && etat.animateur === monId);
+
+    // La rubrique « Mener la réunion », visible de tous.
+    if (jeMene) {
+      menerEtat.textContent = 'Vous menez cette réunion.';
+    } else if (etat.animateur) {
+      menerEtat.textContent = 'Réunion menée par '
+        + (etat.animateurPrenom || 'un participant sans prénom') + '.';
+    } else {
+      menerEtat.textContent = 'Personne ne mène la réunion. Celui qui s’en charge '
+        + 'administre l’écran depuis son téléphone : tour de parole, retrait '
+        + 'd’un document, fin de réunion.';
+    }
+    boutonRevendiquer.hidden = !!etat.animateur;
+    boutonQuitter.hidden = !jeMene;
+
+    sectionAnimation.hidden = !jeMene;
+    if (!jeMene) {
+      arreterPresence();
+      return;
+    }
+    demarrerPresence();
+
+    regime.textContent = etat.laMainEstLibre
+      ? 'La main est libre : chacun peut afficher un document et tourner les pages.'
+      : 'Le tour de parole est fermé : une seule personne pilote l’écran à la fois.';
+    boutonBasculer.textContent = etat.laMainEstLibre
+      ? 'Fermer le tour de parole'
+      : 'Rendre la main libre';
+    boutonLiberer.hidden = etat.laMainEstLibre || !etat.mainA;
+
+    // On ne réécrit pas un réglage qu'on est en train de manipuler : le curseur
+    // sauterait sous le doigt à chaque battement du flux.
+    if (document.activeElement !== curseur) {
+      curseur.value = etat.luminosite === undefined ? 100 : etat.luminosite;
+      valeurLuminosite.textContent = curseur.value + ' %';
+    }
+    if (document.activeElement !== choixRetour) {
+      choixRetour.value = String(etat.retourAccueilMinutes === undefined ? 0 : etat.retourAccueilMinutes);
+    }
+
+    listeParticipants.innerHTML = '';
+    var participants = etat.participants || [];
+    for (var i = 0; i < participants.length; i++) {
+      var p = participants[i];
+      var li = document.createElement('li');
+
+      var titre = document.createElement('div');
+      titre.className = 'titre';
+      var nom = document.createElement('span');
+      nom.className = 'nom';
+      nom.textContent = (p.prenom || 'Sans prénom') + (p.id === monId ? ' (vous)' : '');
+      titre.appendChild(nom);
+      if (etat.mainA === p.id) {
+        var qui = document.createElement('span');
+        qui.className = 'qui';
+        qui.textContent = 'a la main';
+        titre.appendChild(qui);
+      }
+      li.appendChild(titre);
+
+      if (p.id !== monId) {
+        var actions = document.createElement('div');
+        actions.className = 'actions';
+        if (!etat.laMainEstLibre && etat.mainA !== p.id) {
+          actions.appendChild(boutonDe('Donner la main', 'afficher', 'donner', p.id));
+        }
+        // L'écran de la salle n'a pas de pupitre : lui confier la réunion la
+        // mettrait entre les mains d'un appareil qui ne peut rien en faire.
+        if (p.prenom !== 'Écran') {
+          actions.appendChild(boutonDe('Lui confier la réunion', 'afficher', 'confier', p.id));
+        }
+        li.appendChild(actions);
+      }
+      listeParticipants.appendChild(li);
+    }
+  }
+
+  function boutonDe(libelle, classe, geste, cible) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = classe;
+    b.textContent = libelle;
+    b.setAttribute('data-geste', geste);
+    b.setAttribute('data-cible', cible);
+    return b;
+  }
+
+  // Mener, ne plus mener.
+  boutonRevendiquer.addEventListener('click', function () {
+    commander('/api/animation', { action: 'revendiquer' }, messageMener);
+  });
+  boutonQuitter.addEventListener('click', function () {
+    commander('/api/animation', { action: 'quitter' }, messageMener);
+  });
+
+  // Le pupitre.
+  document.getElementById('qr-ecran').addEventListener('click', function () {
+    commander('/api/accueil', {}, messageAnimation);
+  });
+  boutonBasculer.addEventListener('click', function () {
+    if (!dernierEtat) return;
+    commander('/api/animateur/main-libre', { valeur: !dernierEtat.laMainEstLibre }, messageAnimation);
+  });
+  boutonLiberer.addEventListener('click', function () {
+    commander('/api/animateur/donner', { cible: null }, messageAnimation);
+  });
+
+  listeParticipants.addEventListener('click', function (evenement) {
+    var cible = evenement.target;
+    if (!cible || cible.tagName !== 'BUTTON') return;
+    var geste = cible.getAttribute('data-geste');
+    var qui = cible.getAttribute('data-cible');
+    if (geste === 'donner') {
+      commander('/api/animateur/donner', { cible: qui }, messageAnimation);
+    } else if (geste === 'confier') {
+      if (!window.confirm('Confier la réunion ? Vous ne pourrez plus l’administrer.')) return;
+      commander('/api/animateur/transmettre', { cible: qui }, messageAnimation);
+    }
+  });
+
+  // La luminosité s'envoie au relâchement du curseur, pas à chaque pixel.
+  curseur.addEventListener('input', function () {
+    valeurLuminosite.textContent = curseur.value + ' %';
+  });
+  curseur.addEventListener('change', function () {
+    commander('/api/animateur/confort', { luminosite: Number(curseur.value) }, messageAnimation);
+  });
+  choixRetour.addEventListener('change', function () {
+    commander('/api/animateur/confort', { retourAccueilMinutes: Number(choixRetour.value) }, messageAnimation);
+  });
+
+  document.getElementById('terminer').addEventListener('click', function () {
+    // Un geste sans retour se confirme. La fenêtre du navigateur est la seule
+    // qu'on ne puisse pas rater.
+    if (!window.confirm('Terminer la réunion ? Les documents seront effacés et le code changera.')) return;
+    commander('/api/animateur/terminer', {}, messageAnimation, function (reponse) {
+      // Le code a changé : l'adresse de CETTE page ne vaut plus rien. On suit
+      // la nouvelle réunion, en simple participant — le rôle ne survit pas à
+      // la réunion qu'il menait.
+      if (reponse.code) location.replace('/salle/' + reponse.code);
+    });
+  });
+
+  // Retirer un document : sur la liste commune, téléphone de l'animateur.
+  liste.addEventListener('click', function (evenement) {
+    var cible = evenement.target;
+    if (!cible || cible.tagName !== 'BUTTON') return;
+    var id = cible.getAttribute('data-retirer');
+    if (!id) return;
+    if (!window.confirm('Retirer « ' + cible.getAttribute('data-nom') + ' » ? Le fichier sera effacé.')) return;
+    commander('/api/animateur/retirer', { documentId: id }, message);
+  });
+
+  // --- Le signe de vie de l'animateur -----------------------------------------
+  //
+  // Le secours du rôle repose sur lui : sans nouvelles du téléphone de
+  // l'animateur pendant dix minutes, le rôle redevient revendicable. Un
+  // téléphone verrouillé suspend sa page, et donc ces signes de vie — c'est
+  // voulu : c'est ce qui distingue « il est là » de « il est parti ».
+
+  var minuteriePresence = null;
+
+  function envoyerPresence() {
+    if (document.hidden) return;
+    var requete = new XMLHttpRequest();
+    requete.open('POST', '/api/presence?code=' + encodeURIComponent(code));
+    requete.setRequestHeader('content-type', 'application/json');
+    requete.send(JSON.stringify({ participant: moi() }));
+  }
+
+  function demarrerPresence() {
+    if (minuteriePresence) return;
+    minuteriePresence = setInterval(envoyerPresence, 60 * 1000);
+  }
+
+  function arreterPresence() {
+    if (!minuteriePresence) return;
+    clearInterval(minuteriePresence);
+    minuteriePresence = null;
+  }
+
+  // Au réveil du téléphone, un signe de vie TOUT DE SUITE — et pas seulement
+  // s'il se croit animateur. Un animateur resté verrouillé plus que le délai a
+  // appris que le rôle était libre ; si personne ne l'a repris, ce signe de vie
+  // le lui rend, et le serveur prévient tout le monde.
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) envoyerPresence();
+  });
+
+  // --- Inviter quelqu'un -------------------------------------------------------
+
+  var zoneInvitation = document.getElementById('invitation');
+  var imageInvitation = document.getElementById('qr-invitation');
+  var secoursInvitation = document.getElementById('qr-invitation-secours');
+
+  document.getElementById('inviter').addEventListener('click', function () {
+    zoneInvitation.hidden = !zoneInvitation.hidden;
+    if (zoneInvitation.hidden) return;
+    // Le code dans l'adresse de l'image : sans lui, le navigateur resservirait
+    // le QR code de la réunion précédente depuis son cache.
+    imageInvitation.style.display = '';
+    secoursInvitation.style.display = 'none';
+    imageInvitation.src = '/api/qr.svg?c=' + encodeURIComponent(code);
+    document.getElementById('adresse-invitation').textContent =
+      (adresseSalle || (location.origin + '/salle/' + code)) + ' — code ' + code;
+  });
+
+  // qrencode en panne : l'adresse en toutes lettres, comme sur l'écran.
+  imageInvitation.onerror = function () {
+    imageInvitation.style.display = 'none';
+    secoursInvitation.style.display = 'block';
+    secoursInvitation.textContent = adresseSalle || (location.origin + '/salle/' + code);
+  };
+
   var flux = new EventSource('/api/flux');
   flux.addEventListener('etat', function (evenement) {
     try { appliquer(JSON.parse(evenement.data)); } catch (err) { /* on garde l'ancien */ }

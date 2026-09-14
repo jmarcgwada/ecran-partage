@@ -38,6 +38,59 @@
     <button type="button" class="bouton secondaire" id="rendre" hidden>Rendre la main</button>
   </section>
 
+  <!-- Le pupitre de l'animateur. N'existe que sur SON telephone : les autres ne
+       voient meme pas qu'il y a quelque chose a administrer. -->
+  <section id="animation" hidden>
+    <h2>Vous menez la réunion</h2>
+
+    <button type="button" class="bouton" id="qr-ecran">Afficher le QR code à l’écran</button>
+    <p class="vide">Pour un retardataire : l’écran revient à l’accueil, les documents restent.</p>
+
+    <h3>Le tour de parole</h3>
+    <p class="vide" id="regime"></p>
+    <button type="button" class="bouton secondaire" id="basculer"></button>
+    <button type="button" class="bouton secondaire" id="liberer" hidden>Reprendre la main à tout le monde</button>
+
+    <h3>Participants</h3>
+    <ul class="documents" id="participants"></ul>
+
+    <h3>Confort de l’écran</h3>
+    <label for="luminosite">Luminosité des documents — <span id="luminosite-valeur">100 %</span></label>
+    <input type="range" id="luminosite" min="40" max="100" step="10" value="100">
+    <label for="retour">Revenir au QR code d’accueil après</label>
+    <select id="retour">
+      <option value="0">jamais</option>
+      <option value="5">5 minutes sans activité</option>
+      <option value="15">15 minutes sans activité</option>
+      <option value="30">30 minutes sans activité</option>
+    </select>
+
+    <h3>Terminer</h3>
+    <p class="vide">
+      Les documents sont <strong>effacés du disque</strong>, un nouveau code est
+      tiré, et l’écran revient au QR code d’accueil. C’est sans retour.
+    </p>
+    <button type="button" class="bouton danger" id="terminer">Terminer la réunion</button>
+    <!-- Les messages du pupitre s'affichent ICI, et non dans la rubrique
+         d'envoi : l'animateur ne verrait pas une erreur tombee trois ecrans
+         plus bas. -->
+    <div id="message-animation"></div>
+  </section>
+
+  <!-- Inviter quelqu'un : chacun peut tendre son telephone a un retardataire,
+       sans interrompre la presentation en cours ni deranger personne. -->
+  <section>
+    <button type="button" class="bouton secondaire" id="inviter">Inviter quelqu’un</button>
+    <div id="invitation" hidden>
+      <p class="vide">Faites scanner ce code par la personne qui arrive.</p>
+      <div class="qr-invitation">
+        <img id="qr-invitation" alt="QR code de la salle">
+        <div id="qr-invitation-secours"></div>
+      </div>
+      <p class="adresse-invitation" id="adresse-invitation"></p>
+    </div>
+  </section>
+
   <!-- Un telephone = une personne : le prenom se saisit une fois et ce
        navigateur le retient. Il n'y a pas d'utilisateur a commuter — si le
        prenom est faux, on corrige le champ. -->
@@ -71,6 +124,16 @@
       Appuyez sur « Afficher » pour remettre un document à l’écran. Inutile de
       le renvoyer : il reste disponible jusqu’à la fin de la réunion.
     </p>
+  </section>
+
+  <!-- Mener la reunion. En BAS, et discret : c'est un geste qu'on fait une fois,
+       en debut de reunion, et qu'on ne doit pas faire par megarde. -->
+  <section id="mener">
+    <h2>Mener la réunion</h2>
+    <p class="vide" id="mener-etat"></p>
+    <button type="button" class="bouton secondaire" id="revendiquer" hidden>Je mène la réunion</button>
+    <button type="button" class="bouton secondaire" id="quitter" hidden>Ne plus mener la réunion</button>
+    <div id="message-mener"></div>
   </section>
 </main>
 

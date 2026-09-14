@@ -2,11 +2,16 @@
 // L'AIGUILLAGE
 //
 //   /scene           l'ecran de la salle : QR code, puis le document courant
-//   /salle/<code>    le telephone d'un participant : le depot
+//   /salle/<code>    le telephone d'un participant — et celui de l'animateur
 //   /page/<id>/<n>   les pages, en images
+//   /video/<id>      les videos, telles quelles
 //
-// Ce que le code de salle protege : LE DEPOT, et rien d'autre (§4). Lire
-// l'etat reste ouvert — l'ecran de la salle n'a aucun moyen de garder un
+// Trois portes, trois gardiens :
+//   - le CODE DE SALLE ferme tout geste : deposer, piloter, administrer ;
+//   - le TOUR DE PAROLE ferme le pilotage de l'ecran, quand l'animateur le veut ;
+//   - le ROLE D'ANIMATEUR ferme l'administration.
+//
+// Lire l'etat reste ouvert : l'ecran de la salle n'a aucun moyen de garder un
 // secret, et la frontiere du service est le reseau (§9.3).
 // ============================================================================
 
@@ -29,7 +34,8 @@ import {
   ouvrirDocument, documentPret, documentEnEchec, dossierDuDocument,
   peutPiloter, prendreLaMain, rendreLaMain, donnerLaMain, reglerMainLibre,
   retirerDocument, nouvelleReunion, documentPar, reglerLecture, signalerChangement,
-  revenirAAccueil,
+  revenirAAccueil, estAnimateur, signalerPresence, revendiquerAnimation,
+  transmettreAnimation, quitterAnimation,
 } from './salle.js';
 import { ouvrirFlux } from './flux.js';
 
@@ -358,31 +364,71 @@ async function commanderLaVideo(req, res, url) {
 
 // --- L'animateur ------------------------------------------------------------
 //
-// Aucune barriere de plus que le code de salle : le cahier ne veut pas de
-// comptes (§4), et l'animateur d'une reunion est celui qui ouvre cette page.
-// C'est assez pour empecher le bureau d'a cote, et cela n'a jamais pretendu
-// etre davantage.
+// Un participant qui a REVENDIQUE le role depuis son telephone (voir salle.js).
+// Lui seul administre. Le code de salle ne suffit plus : c'etait l'ancien
+// modele, ou quiconque ouvrait /animateur avec le code menait la reunion.
+//
+// Dans chaque corps de requete, « participant » designe TOUJOURS celui qui
+// parle. La personne visee par la commande s'appelle « cible ». Melanger les
+// deux serait laisser un participant se donner des droits en se designant.
+
+function refusDAnimateur(res) {
+  return erreur(res, 403, "Seul l'animateur de la réunion peut faire cela.");
+}
+
+async function gererLAnimation(req, res, url) {
+  const corps = await corpsAvecCode(req, res, url);
+  if (!corps) return undefined;
+  signalerPresence(corps.participant);
+
+  if (corps.action === 'quitter') {
+    if (!quitterAnimation(corps.participant)) return erreur(res, 409, "Vous n'êtes pas l'animateur.");
+    return json(res, 200, { animateur: null });
+  }
+  if (!revendiquerAnimation(corps.participant)) {
+    const etat = etatPublic();
+    return erreur(res, 409, etat.animateurPrenom
+      ? `${etat.animateurPrenom} mène déjà la réunion.`
+      : "Quelqu'un mène déjà la réunion.");
+  }
+  return json(res, 200, { animateur: corps.participant });
+}
+
+// Un signe de vie du telephone de l'animateur. Ne compte PAS comme une activite
+// de la reunion : voir signalerPresence().
+async function presence(req, res, url) {
+  const corps = await corpsAvecCode(req, res, url);
+  if (!corps) return undefined;
+  signalerPresence(corps.participant);
+  return json(res, 200, { animateur: estAnimateur(corps.participant) });
+}
 
 async function routerAnimateur(req, res, url, chemin) {
   const corps = await corpsAvecCode(req, res, url);
   if (!corps) return undefined;
 
+  // Toute commande de l'animateur est un signe de vie — y compris celle d'un
+  // animateur revenu apres le delai de secours, tant que personne n'a repris le
+  // role entre-temps.
+  signalerPresence(corps.participant);
+  if (!estAnimateur(corps.participant)) return refusDAnimateur(res);
+
   if (chemin === '/api/animateur/main-libre') {
     return json(res, 200, { laMainEstLibre: reglerMainLibre(corps.valeur) });
   }
   if (chemin === '/api/animateur/donner') {
-    if (!donnerLaMain(corps.participant)) return erreur(res, 404, 'Participant inconnu.');
+    if (!donnerLaMain(corps.cible)) return erreur(res, 404, 'Participant inconnu.');
     return json(res, 200, { mainA: salle.mainA });
+  }
+  if (chemin === '/api/animateur/transmettre') {
+    const resultat = transmettreAnimation(corps.participant, corps.cible);
+    if (resultat === null) return erreur(res, 404, 'Participant inconnu.');
+    if (!resultat) return refusDAnimateur(res);
+    return json(res, 200, { animateur: corps.cible });
   }
   if (chemin === '/api/animateur/retirer') {
     if (!retirerDocument(corps.documentId)) return erreur(res, 404, 'Document inconnu.');
     return json(res, 200, { retire: true });
-  }
-  if (chemin === '/api/animateur/accueil') {
-    // Redonner le QR code a la demande, sans rien effacer : un retardataire
-    // arrive, on lui montre le code, on reprend.
-    revenirAAccueil();
-    return json(res, 200, { affichage: etatPublic().affichage });
   }
   if (chemin === '/api/animateur/confort') {
     // Le confort de l'ecran (§11, phase 4). Borne ici, et pas seulement dans la
@@ -417,6 +463,19 @@ async function routerAnimateur(req, res, url, chemin) {
     return json(res, 200, { code: nouvelleReunion() });
   }
   return erreur(res, 404, 'Commande inconnue.');
+}
+
+// Remettre le QR code a l'ecran, sans rien effacer : un retardataire arrive, on
+// lui montre le code, on reprend. C'est un geste de PILOTAGE et non
+// d'administration — il change ce que montre l'ecran, comme tourner une page.
+// Il suit donc le tour de parole, auquel l'animateur echappe toujours.
+async function remettreAccueil(req, res, url) {
+  const corps = await corpsAvecCode(req, res, url);
+  if (!corps) return undefined;
+  signalerPresence(corps.participant);
+  if (!peutPiloter(corps.participant)) return refusDeLaMain(res);
+  revenirAAccueil();
+  return json(res, 200, { affichage: etatPublic().affichage });
 }
 
 // Tourner une page du document affiche. Le telephone envoie un SENS, pas un
@@ -457,6 +516,9 @@ export function creerGestionnaire() {
       if (chemin === '/api/rejoindre' && req.method === 'POST') return await rejoindre(req, res, url);
       if (chemin === '/api/video' && req.method === 'POST') return await commanderLaVideo(req, res, url);
       if (chemin === '/api/main' && req.method === 'POST') return await gererLaMain(req, res, url);
+      if (chemin === '/api/animation' && req.method === 'POST') return await gererLAnimation(req, res, url);
+      if (chemin === '/api/presence' && req.method === 'POST') return await presence(req, res, url);
+      if (chemin === '/api/accueil' && req.method === 'POST') return await remettreAccueil(req, res, url);
       if (chemin.startsWith('/api/animateur/') && req.method === 'POST') {
         return await routerAnimateur(req, res, url, chemin);
       }
@@ -466,7 +528,6 @@ export function creerGestionnaire() {
       if (chemin.startsWith('/video/')) return servirVideo(req, res, chemin);
 
       if (chemin === '/scene') return servirFichier(res, path.join(racinePublique, 'scene.html'));
-      if (chemin === '/animateur') return servirFichier(res, path.join(racinePublique, 'animateur.html'));
       if (/^\/salle\/\d{4}$/.test(chemin)) {
         return servirFichier(res, path.join(racinePublique, 'salle.html'));
       }

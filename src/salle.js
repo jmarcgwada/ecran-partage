@@ -26,6 +26,10 @@ export const salle = {
   mainA: null,
   laMainEstLibre: true,
 
+  // L'animateur : un participant qui l'a revendique. null tant que personne ne
+  // l'a fait — la reunion fonctionne tres bien sans.
+  animateur: null,
+
   participants: [],
   documents: [],
   affichage: { documentId: null, page: 0, lecture: false },
@@ -96,6 +100,7 @@ export function nouvelleReunion() {
   salle.ouverteLe = Date.now();
   salle.derniereActivite = Date.now();
   salle.mainA = null;
+  salle.animateur = null;
   salle.participants = [];
   salle.documents = [];
   salle.affichage = { documentId: null, page: 0, lecture: false };
@@ -157,6 +162,9 @@ export function reconnaitre(participantId, prenom) {
 // la salle et le code (§9.3) : une reunion n'est pas un systeme de comptes.
 
 export function peutPiloter(participantId) {
+  // L'animateur pilote toujours : il mene la reunion, il doit pouvoir remettre
+  // le QR code a l'ecran pendant que quelqu'un d'autre a la main.
+  if (estAnimateur(participantId)) return true;
   if (salle.laMainEstLibre) return true;
   if (!salle.mainA) return false;      // la main est a prendre
   return salle.mainA === participantId;
@@ -197,6 +205,107 @@ export function reglerMainLibre(valeur) {
   toucher();
   signaler();
   return salle.laMainEstLibre;
+}
+
+// --- L'animateur ------------------------------------------------------------
+//
+// Un participant parmi les autres, qui a REVENDIQUE le role depuis son
+// telephone. Lui seul administre : fermer le tour de parole, donner la main,
+// retirer un document, regler l'ecran, terminer la reunion.
+//
+// Trois regles :
+//   - le premier qui revendique l'obtient ; tant qu'il est la, personne ne le
+//     lui prend ;
+//   - il peut le transmettre a un autre participant, ou le quitter ;
+//   - s'il ne donne plus signe de vie pendant quelques minutes, le role
+//     redevient revendicable. Sans ce secours, un telephone perdu bloquerait la
+//     reunion : plus personne ne pourrait la terminer.
+//
+// Le nom de l'animateur est affiche a l'ecran. C'est la vraie protection contre
+// une prise de role abusive : elle se voit de toute la salle.
+//
+// Comme pour la main, l'identifiant n'est pas un secret — voir plus haut.
+
+function participantPar(id) {
+  return salle.participants.find((p) => p.id === id) || null;
+}
+
+function present(participant) {
+  return !!participant
+    && Date.now() - participant.vuLe < reglages.animateurAbsentMinutes * 60 * 1000;
+}
+
+export function estAnimateur(participantId) {
+  if (!participantId || salle.animateur !== participantId) return false;
+  return present(participantPar(participantId));
+}
+
+// Un signe de vie. N'appelle PAS toucher() : etre la n'est pas une activite de
+// la reunion. Sans cette distinction, un telephone ouvert sur la table
+// empecherait le retour a l'accueil et le filet d'effacement du §9.2.
+export function signalerPresence(participantId) {
+  const participant = participantPar(participantId);
+  if (!participant) return false;
+
+  // Le cas du telephone qui se reveille : l'animateur l'avait range plus
+  // longtemps que le delai de secours, les telephones ont appris que le role
+  // etait libre — mais personne ne l'a repris. Il le retrouve, et il faut le
+  // DIRE aux telephones, sinon ils continueraient d'afficher le role a prendre.
+  const revenant = salle.animateur === participantId && !present(participant);
+
+  participant.vuLe = Date.now();
+  if (revenant) signaler();
+  return true;
+}
+
+export function revendiquerAnimation(participantId) {
+  const participant = participantPar(participantId);
+  if (!participant) return false;
+  if (salle.animateur && salle.animateur !== participantId && estAnimateur(salle.animateur)) return false;
+  salle.animateur = participantId;
+  participant.vuLe = Date.now();
+  toucher();
+  signaler();
+  return true;
+}
+
+export function transmettreAnimation(depuis, vers) {
+  if (!estAnimateur(depuis)) return false;
+  const cible = participantPar(vers);
+  if (!cible) return null;
+  salle.animateur = cible.id;
+  // Le nouvel animateur est repute present a l'instant de la transmission :
+  // sinon, si son telephone dormait depuis dix minutes, le role lui echapperait
+  // aussitot recu.
+  cible.vuLe = Date.now();
+  toucher();
+  signaler();
+  return true;
+}
+
+export function quitterAnimation(participantId) {
+  if (salle.animateur !== participantId) return false;
+  salle.animateur = null;
+  toucher();
+  signaler();
+  return true;
+}
+
+// Appelee par la minuterie du serveur. Le depart d'un animateur n'est un
+// evenement pour personne — son telephone se tait, voila tout. Il faut donc que
+// le serveur le constate et PREVIENNE les telephones, sinon ils continueraient
+// d'afficher « animée par Camille » et personne ne verrait le bouton pour
+// reprendre le role.
+let dernierAnimateurSignaleParti = null;
+export function surveillerAnimateur() {
+  if (salle.animateur && !estAnimateur(salle.animateur)) {
+    if (dernierAnimateurSignaleParti === salle.animateur) return false;
+    dernierAnimateurSignaleParti = salle.animateur;
+    signaler();
+    return true;
+  }
+  dernierAnimateurSignaleParti = null;
+  return false;
 }
 
 // --- Les documents ----------------------------------------------------------
@@ -348,6 +457,12 @@ export function etatPublic() {
     nomSalle: reglages.nomSalle,
     laMainEstLibre: salle.laMainEstLibre,
     mainA: salle.mainA,
+    // L'animateur n'est annonce que s'il est LA : un animateur parti depuis
+    // plus que le delai de secours n'en est plus un, et le role est a prendre.
+    animateur: estAnimateur(salle.animateur) ? salle.animateur : null,
+    animateurPrenom: estAnimateur(salle.animateur)
+      ? ((participantPar(salle.animateur) || {}).prenom || '')
+      : null,
     // Les participants servent a la page de l'animateur, qui doit pouvoir
     // donner la main a quelqu'un en le nommant. Leur identifiant circule donc —
     // il n'a jamais ete un secret, voir le commentaire du tour de parole.

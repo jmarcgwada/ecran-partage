@@ -11,7 +11,9 @@
 import http from 'node:http';
 
 import { initDossiers, reglages } from './src/config.js';
-import { nouvelleReunion, effacerSiOubliee, retourAccueilSiInactif } from './src/salle.js';
+import {
+  nouvelleReunion, effacerSiOubliee, retourAccueilSiInactif, surveillerAnimateur,
+} from './src/salle.js';
 import { creerGestionnaire } from './src/api.js';
 import { prechaufferBureautique } from './src/documents.js';
 
@@ -62,9 +64,15 @@ prechaufferBureautique().then((resultat) => {
 //                            restent, ce n'est pas une fin de reunion.
 //   effacerSiOubliee       — le filet du §9.2 : une reunion que personne n'a
 //                            terminee finit par s'effacer, pour de bon.
+//   surveillerAnimateur    — le secours du role : un animateur dont le
+//                            telephone s'est tu ne previent personne de son
+//                            depart. C'est le serveur qui le constate, et qui
+//                            fait apparaitre sur les telephones le bouton pour
+//                            reprendre le role.
 const rythme = setInterval(() => {
   retourAccueilSiInactif();
   effacerSiOubliee();
+  surveillerAnimateur();
 }, 60 * 1000);
 
 let fermeture = false;

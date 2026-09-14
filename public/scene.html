@@ -86,6 +86,11 @@
 
   #consigne { font-size: 3.4vh; font-weight: 500; }
 
+  /* Qui mene la reunion. Discret, mais lisible du fond de la salle : c'est ce
+     qui rend visible une prise de role que personne n'attendait. */
+  #animee-par { font-size: 2.4vh; color: var(--discret); margin-top: -2vh; }
+  #barre-animateur { color: var(--discret); flex: none; }
+
   #code-grand {
     font-size: 9vh;
     font-weight: 700;
@@ -224,6 +229,7 @@
 
 <div id="accueil">
   <div id="nom-salle">&nbsp;</div>
+  <div id="animee-par"></div>
   <div id="qr-cadre">
     <img id="qr" alt="QR code de la salle">
     <div id="qr-secours"></div>
@@ -245,6 +251,7 @@
   <div id="barre">
     <img id="barre-qr" alt="">
     <div id="barre-titre"></div>
+    <div id="barre-animateur"></div>
     <div id="barre-page"></div>
     <div id="barre-code"></div>
   </div>
@@ -324,6 +331,11 @@
     monCode = etat.code;
 
     document.getElementById('nom-salle').textContent = etat.nomSalle || '';
+    var animateur = etat.animateur
+      ? 'animée par ' + (etat.animateurPrenom || 'un participant')
+      : '';
+    document.getElementById('animee-par').textContent = animateur;
+    document.getElementById('barre-animateur').textContent = animateur;
     document.getElementById('code-grand').textContent = etat.code;
     document.getElementById('barre-code').textContent = etat.code;
     poserQr(etat.code);
@@ -473,7 +485,7 @@
     } else if (touche === 'ArrowLeft' || touche === 'PageUp') {
       commander('/api/page', { sens: -1 });
     } else if (touche === 'Escape') {
-      commander('/api/animateur/accueil', {});
+      commander('/api/accueil', {});
     } else {
       return;   // tout le reste appartient au navigateur, y compris F11
     }

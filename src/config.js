@@ -62,6 +62,15 @@ const defauts = {
   // Le reglage s'active depuis /animateur, en connaissance de cause.
   retourAccueilMinutes: Number(process.env.ECR_RETOUR_ACCUEIL_MINUTES) || 0,
 
+  // Le secours du role d'animateur : s'il part ou perd son telephone, le role
+  // redevient revendicable apres ce delai SANS SIGNE DE VIE de sa part. Sans ce
+  // secours, plus personne ne pourrait terminer la reunion.
+  //
+  // A savoir : un telephone verrouille suspend sa page, donc ses signes de vie.
+  // Un animateur qui range son telephone plus longtemps que ce delai laisse le
+  // role a prendre — et l'ecran affiche alors qui l'a repris.
+  animateurAbsentMinutes: Number(process.env.ECR_ANIMATEUR_ABSENT_MINUTES) || 10,
+
   // Le filet de securite du §9.2 : une reunion que personne n'a pris la peine
   // de terminer ne doit pas laisser un document confidentiel sur le NAS
   // pendant un mois. Compte a partir de la DERNIERE activite, pas du debut :

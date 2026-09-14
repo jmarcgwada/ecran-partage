@@ -175,16 +175,73 @@ a.bouton { text-decoration: none; }
   transition: width 0.2s;
 }
 
-#message {
+#message, #message-animation, #message-mener {
   margin-top: 0.9rem;
   padding: 0.8rem 0.9rem;
   border-radius: 0.7rem;
   font-size: 0.95rem;
   display: none;
 }
-#message.visible { display: block; }
-#message.erreur { background: rgba(255,107,107,0.14); color: var(--rouge); }
-#message.bien { background: rgba(74,222,128,0.12); color: var(--vert); }
+#message.visible, #message-animation.visible, #message-mener.visible { display: block; }
+#message.erreur, #message-animation.erreur, #message-mener.erreur {
+  background: rgba(255,107,107,0.14);
+  color: var(--rouge);
+}
+#message.bien, #message-animation.bien, #message-mener.bien {
+  background: rgba(74,222,128,0.12);
+  color: var(--vert);
+}
+
+/* Le pupitre de l'animateur : des sous-rubriques, pour qu'une page déjà
+   longue reste lisible d'un coup d'œil. */
+h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 1.4rem 0 0.5rem;
+}
+#animation {
+  border: 1px solid var(--accent);
+  border-radius: 0.9rem;
+  padding: 1rem;
+}
+
+/* Plusieurs boutons sur une ligne de participant : ils passent à la ligne
+   plutôt que d'écraser le prénom. */
+ul.documents .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: flex-end;
+  flex: none;
+  max-width: 60%;
+}
+
+/* L'invitation : un QR code assez grand pour être scanné d'un téléphone à
+   l'autre, sur fond blanc — un QR clair sur fond sombre n'est pas lu par la
+   moitié des téléphones. */
+#invitation { margin-top: 0.9rem; text-align: center; }
+.qr-invitation {
+  display: inline-block;
+  background: #fff;
+  padding: 0.9rem;
+  border-radius: 0.8rem;
+  line-height: 0;
+}
+.qr-invitation img { width: 15rem; height: 15rem; max-width: 70vw; max-height: 70vw; }
+#qr-invitation-secours {
+  display: none;
+  color: #111;
+  line-height: 1.4;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  word-break: break-all;
+  max-width: 15rem;
+}
+.adresse-invitation {
+  margin: 0.7rem 0 0;
+  color: var(--discret);
+  font-size: 0.85rem;
+  word-break: break-all;
+}
 
 ul.documents { list-style: none; margin: 0; padding: 0; }
 ul.documents li {
