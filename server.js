@@ -14,6 +14,7 @@ import { initDossiers, reglages } from './src/config.js';
 import {
   nouvelleReunion, effacerSiOubliee, retourAccueilSiInactif, surveillerAnimateur,
 } from './src/salle.js';
+import { oublierLesVieuxEchecs } from './src/acces.js';
 import { creerGestionnaire } from './src/api.js';
 import { prechaufferBureautique } from './src/documents.js';
 
@@ -73,6 +74,7 @@ const rythme = setInterval(() => {
   retourAccueilSiInactif();
   effacerSiOubliee();
   surveillerAnimateur();
+  oublierLesVieuxEchecs();   // les adresses sorties de la fenetre des codes faux
 }, 60 * 1000);
 
 let fermeture = false;

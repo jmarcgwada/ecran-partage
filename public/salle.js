@@ -752,11 +752,12 @@
   document.getElementById('inviter').addEventListener('click', function () {
     zoneInvitation.hidden = !zoneInvitation.hidden;
     if (zoneInvitation.hidden) return;
-    // Le code dans l'adresse de l'image : sans lui, le navigateur resservirait
-    // le QR code de la réunion précédente depuis son cache.
     imageInvitation.style.display = '';
     secoursInvitation.style.display = 'none';
-    imageInvitation.src = '/api/qr.svg?c=' + encodeURIComponent(code);
+    // Le code dans l'adresse de l'image, pour deux raisons : depuis Internet le
+    // serveur l'exige — le QR code ENCODE le code de la salle —, et sans lui le
+    // navigateur resservirait le QR code d'une réunion précédente.
+    imageInvitation.src = '/api/qr.svg?code=' + encodeURIComponent(code);
     document.getElementById('adresse-invitation').textContent =
       (adresseSalle || (location.origin + '/salle/' + code)) + ' — code ' + code;
   });
@@ -768,14 +769,37 @@
     secoursInvitation.textContent = adresseSalle || (location.origin + '/salle/' + code);
   };
 
-  var flux = new EventSource('/api/flux');
+  // L'état et le flux se lisent AVEC le code : depuis Internet, sans lui, le
+  // serveur ne dit plus rien — c'est ce qui l'empêchait de donner le code et
+  // les documents de la réunion à n'importe qui. Sur le réseau de la salle, le
+  // code est simplement ignoré.
+  var suffixeCode = '?code=' + encodeURIComponent(code);
+
+  var flux = new EventSource('/api/flux' + suffixeCode);
   flux.addEventListener('etat', function (evenement) {
     try { appliquer(JSON.parse(evenement.data)); } catch (err) { /* on garde l'ancien */ }
   });
+  // Un refus du serveur (code périmé, trop d'essais) FERME le flux pour de bon :
+  // un EventSource ne se reconnecte pas après un statut d'erreur. C'est heureux
+  // — il ne va pas marteler le serveur avec un code faux jusqu'à se faire
+  // bloquer — mais il faut le dire, sinon la page reste figée sans explication.
+  flux.onerror = function () {
+    if (flux.readyState === 2 && !dernierEtat) {
+      dire('Cette réunion n’est plus accessible. Rescannez le QR code affiché sur l’écran.', 'erreur');
+    }
+  };
 
   var amorce = new XMLHttpRequest();
-  amorce.open('GET', '/api/etat');
+  amorce.open('GET', '/api/etat' + suffixeCode);
   amorce.onload = function () {
+    if (amorce.status === 429) {
+      var trop = {};
+      try { trop = JSON.parse(amorce.responseText); } catch (err) { /* défaut */ }
+      return dire(trop.erreur || 'Trop de codes incorrects. Réessayez plus tard.', 'erreur');
+    }
+    if (amorce.status === 403) {
+      return dire('La réunion a changé de code. Rescannez le QR code affiché sur l’écran.', 'erreur');
+    }
     try { appliquer(JSON.parse(amorce.responseText)); } catch (err) { /* le flux suivra */ }
   };
   amorce.send();

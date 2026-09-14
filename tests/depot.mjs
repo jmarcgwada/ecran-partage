@@ -705,6 +705,120 @@ verifier('et le revenant ne reprend pas un rôle déjà repris',
 await poster('/api/animation', { action: 'quitter', participant: bruno });
 await animer('/api/animation', { action: 'revendiquer' });
 
+// --- La porte publique ------------------------------------------------------
+//
+// LA fuite que ce bloc eprouve : depuis Internet, l'etat de la reunion donnait
+// le code, la liste des documents et l'adresse de leurs pages a n'importe qui.
+//
+// fetch interdit de choisir l'en-tete Host : c'est pourtant lui, et lui seul,
+// qui distingue la porte publique. D'ou ces requetes brutes.
+
+const { reglages: reglagesPorte } = await import('../src/config.js');
+const acces = await import('../src/acces.js');
+
+const PUBLIC = 'ecran.exemple.fr';
+reglagesPorte.adressePublique = 'https://' + PUBLIC;
+acces.toutOublier();
+
+const porte = (chemin, { hote = PUBLIC, xff = '203.0.113.7', methode = 'GET' } = {}) =>
+  new Promise((resoudre) => {
+    const entetes = { host: hote };
+    if (xff) entetes['x-forwarded-for'] = xff;
+    const requete = http.request({ host: '127.0.0.1', port, path: chemin, method: methode, headers: entetes },
+      (r) => {
+        let corps = '';
+        r.setEncoding('utf8');
+        // Un flux SSE accepte ne se termine jamais : on se contente du statut.
+        if ((r.headers['content-type'] || '').startsWith('text/event-stream')) {
+          r.destroy();
+          return resoudre({ statut: r.statusCode, corps: '' });
+        }
+        r.on('data', (m) => { corps += m; });
+        r.on('end', () => resoudre({ statut: r.statusCode, corps }));
+      });
+    requete.on('error', () => resoudre({ statut: 0, corps: '' }));
+    requete.end();
+  });
+
+const codeActuel = salleModule.salle.code;
+const fauxCode = String((Number(codeActuel) + 1) % 10000).padStart(4, '0');
+
+// Le reseau de la salle, d'abord : rien n'y change, l'ecran doit continuer de
+// lire l'etat sans rien prouver.
+const local = await porte('/api/etat', { hote: '192.168.0.48:8802', xff: '' });
+verifier('sur le réseau de la salle, l’état se lit toujours sans code',
+  local.statut === 200 && local.corps.includes(codeActuel));
+
+// Puis Internet.
+const sansCode = await porte('/api/etat');
+verifier('depuis Internet, l’état ne se lit pas sans le code', sansCode.statut === 403, String(sansCode.statut));
+// Le controle qui compte : pas « refuse », mais « ne laisse RIEN passer ».
+verifier('et le refus ne laisse passer ni le code ni les documents',
+  !sansCode.corps.includes(codeActuel) && !/documents|\/page\//.test(sansCode.corps), sansCode.corps.slice(0, 80));
+
+verifier('depuis Internet, le flux ne s’ouvre pas sans le code',
+  (await porte('/api/flux')).statut === 403);
+// Le QR code ENCODE l'adresse de la salle, donc le code : le servir sans code
+// serait la meme fuite par une autre porte.
+verifier('depuis Internet, le QR code ne se sert pas sans le code',
+  (await porte('/api/qr.svg')).statut === 403);
+verifier('depuis Internet, l’écran de la salle est introuvable',
+  (await porte('/scene')).statut === 404);
+
+verifier('avec le bon code, l’état se lit depuis Internet',
+  (await porte('/api/etat?code=' + codeActuel)).statut === 200);
+verifier('avec le bon code, le flux s’ouvre depuis Internet',
+  (await porte('/api/flux?code=' + codeActuel)).statut === 200);
+verifier('la page du téléphone reste servie depuis Internet',
+  (await porte('/salle/' + codeActuel)).statut === 200);
+
+// --- La limite des codes faux ---
+
+acces.toutOublier();
+for (let i = 0; i < reglagesPorte.codesFauxMax; i += 1) await porte('/api/etat?code=' + fauxCode);
+
+const bloque = await porte('/api/etat?code=' + fauxCode);
+verifier('après trop de codes faux, l’adresse est mise en attente', bloque.statut === 429, String(bloque.statut));
+verifier('le refus dit combien de temps attendre', /minute/.test(bloque.corps), bloque.corps.slice(0, 80));
+
+// Bloque AVANT de comparer : sinon un script continuerait d'apprendre, a chaque
+// essai, s'il a enfin trouve le bon code.
+verifier('une adresse bloquée ne peut plus rien apprendre, même en visant juste',
+  (await porte('/api/etat?code=' + codeActuel)).statut === 429);
+
+// La limite vaut PARTOUT : le depot et les commandes passent par le meme juge.
+verifier('le blocage vaut aussi pour les commandes',
+  (await porte('/api/presence?code=' + codeActuel, { methode: 'POST' })).statut === 429);
+
+// Le proxy AJOUTE l'adresse qu'il voit a la fin de X-Forwarded-For ; ce qui
+// precede, le client l'a ecrit. Si on lisait la premiere entree, un attaquant
+// s'inventerait une adresse neuve a chaque essai.
+verifier('s’inventer une adresse en tête de X-Forwarded-For ne débloque rien',
+  (await porte('/api/etat?code=' + codeActuel, { xff: '198.51.100.99, 203.0.113.7' })).statut === 429);
+
+verifier('une autre adresse n’est pas pénalisée',
+  (await porte('/api/etat?code=' + codeActuel, { xff: '203.0.113.50' })).statut === 200);
+
+// Le reseau local n'est jamais bloque : le tailnet arrivant par la boucle
+// locale, un doigt qui fourche y bloquerait tout le monde.
+acces.toutOublier();
+for (let i = 0; i < reglagesPorte.codesFauxMax + 5; i += 1) {
+  await porte('/api/presence?code=' + fauxCode, { hote: '192.168.0.48:8802', xff: '', methode: 'POST' });
+}
+verifier('les codes faux du réseau local ne bloquent personne',
+  (await porte('/api/etat', { hote: '192.168.0.48:8802', xff: '' })).statut === 200);
+
+// Sans adresse publique declaree, on ne sait pas distinguer : tout passage par
+// un proxy est tenu pour venu du dehors. C'est le choix prudent.
+reglagesPorte.adressePublique = '';
+verifier('sans adresse publique, tout proxy est traité comme Internet',
+  (await porte('/api/etat', { hote: 'peu.importe', xff: '203.0.113.9' })).statut === 403);
+verifier('sans adresse publique, un accès direct reste local',
+  (await porte('/api/etat', { hote: 'peu.importe', xff: '' })).statut === 200);
+
+// On rend le banc a son etat : pas d'adresse publique, table des essais vide.
+acces.toutOublier();
+
 // --- La fin de reunion ------------------------------------------------------
 //
 // Le controle qui compte pour le §9 : les fichiers quittent le disque, ils ne

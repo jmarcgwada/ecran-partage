@@ -71,6 +71,10 @@ const defauts = {
   // role a prendre — et l'ecran affiche alors qui l'a repris.
   animateurAbsentMinutes: Number(process.env.ECR_ANIMATEUR_ABSENT_MINUTES) || 10,
 
+  // Depuis Internet : nombre de codes de salle FAUX qu'une meme adresse peut
+  // essayer en dix minutes avant d'etre mise en attente. Voir acces.js.
+  codesFauxMax: Number(process.env.ECR_CODES_FAUX_MAX) || 10,
+
   // Le filet de securite du §9.2 : une reunion que personne n'a pris la peine
   // de terminer ne doit pas laisser un document confidentiel sur le NAS
   // pendant un mois. Compte a partir de la DERNIERE activite, pas du debut :

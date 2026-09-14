@@ -11,8 +11,9 @@
 //   - le TOUR DE PAROLE ferme le pilotage de l'ecran, quand l'animateur le veut ;
 //   - le ROLE D'ANIMATEUR ferme l'administration.
 //
-// Lire l'etat reste ouvert : l'ecran de la salle n'a aucun moyen de garder un
-// secret, et la frontiere du service est le reseau (§9.3).
+// Lire l'etat reste ouvert SUR LE RESEAU LOCAL : l'ecran de la salle n'a aucun
+// moyen de garder un secret. Depuis Internet, l'etat ne se lit plus sans le code
+// — voir la porte publique dans l'aiguillage, et acces.js.
 // ============================================================================
 
 import fs from 'node:fs';
@@ -38,6 +39,9 @@ import {
   transmettreAnimation, quitterAnimation,
 } from './salle.js';
 import { ouvrirFlux } from './flux.js';
+import {
+  vientDeInternet, adresseDuClient, etatDesEssais, noterEchec,
+} from './acces.js';
 
 const executer = promisify(execFile);
 const racinePublique = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
@@ -158,15 +162,50 @@ function servirVideo(req, res, chemin) {
   return fs.createReadStream(fichier, { start: debut, end: fin }).pipe(res);
 }
 
+// --- Le code de salle ---------------------------------------------------------
+//
+// Un seul endroit juge le code, pour que la limite des codes faux s'applique
+// PARTOUT — au depot, aux commandes, a la lecture de l'etat. Une limite posee
+// sur le seul depot laisserait essayer les dix mille codes par /api/etat, qui
+// dit si l'on a vise juste sans rien deposer.
+//
+// Rend 'ok', 'faux' ou { bloque: minutes }. La limite ne vaut que pour la porte
+// publique : sur le reseau de la salle, l'etat se lit de toute facon sans code,
+// et le tailnet arrivant ici par la boucle locale, tous ses appareils
+// partageraient une meme adresse — un doigt qui fourche bloquerait les autres.
+function jugerLeCode(req, propose) {
+  if (!vientDeInternet(req)) return codeJuste(propose) ? 'ok' : 'faux';
+
+  const adresse = adresseDuClient(req);
+  const essais = etatDesEssais(adresse);
+  // Bloque AVANT de comparer : sinon le script continuerait d'apprendre, a
+  // chaque essai, si le code etait le bon.
+  if (essais.bloque) return { bloque: essais.minutes };
+
+  if (codeJuste(propose)) return 'ok';
+  noterEchec(adresse);
+  return 'faux';
+}
+
+function refusDeCode(res, verdict, options) {
+  if (verdict && verdict.bloque) {
+    return erreur(res, 429,
+      `Trop de codes incorrects. Réessayez dans ${verdict.bloque} minute${verdict.bloque > 1 ? 's' : ''}.`,
+      options);
+  }
+  return erreur(res, 403, 'Code de salle incorrect.', options);
+}
+
 // --- Le depot ---------------------------------------------------------------
 
 async function recevoirDepot(req, res, url) {
   // Le code se verifie AVANT de lire quoi que ce soit — mais on laisse tout de
   // meme le telephone finir son envoi avant de repondre, sinon il recoit une
   // coupure reseau au lieu du message « code de salle incorrect ».
-  if (!codeJuste(url.searchParams.get('code'))) {
+  const verdict = jugerLeCode(req, url.searchParams.get('code'));
+  if (verdict !== 'ok') {
     await viderRequete(req);
-    return erreur(res, 403, 'Code de salle incorrect.', { fermer: true });
+    return refusDeCode(res, verdict, { fermer: true });
   }
 
   const recu = path.join(dossierReunion, `.recu-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
@@ -303,9 +342,10 @@ async function mettreALEcran(req, res, url) {
 // commandes, y compris le viderRequete sans lequel un refus arrive au telephone
 // sous forme de coupure reseau.
 async function corpsAvecCode(req, res, url) {
-  if (!codeJuste(url.searchParams.get('code'))) {
+  const verdict = jugerLeCode(req, url.searchParams.get('code'));
+  if (verdict !== 'ok') {
     await viderRequete(req);
-    erreur(res, 403, 'Code de salle incorrect.', { fermer: true });
+    refusDeCode(res, verdict, { fermer: true });
     return null;
   }
   try {
@@ -501,6 +541,27 @@ export function creerGestionnaire() {
 
     try {
       if (chemin === '/api/sante' && req.method === 'GET') return json(res, 200, { ok: true });
+
+      // --- La porte publique ---------------------------------------------
+      //
+      // Depuis Internet, l'etat de la reunion ne se lit pas sans le code. C'est
+      // LA fuite que ce bloc ferme : l'etat donnait le code, la liste des
+      // documents et l'adresse de leurs pages a n'importe qui. Le QR code aussi,
+      // puisqu'il encode l'adresse de la salle — donc le code.
+      //
+      // L'ecran de la salle, lui, n'a pas de code a presenter : il s'ouvre par
+      // l'adresse LOCALE, et n'a rien a faire sur la porte publique.
+      if (vientDeInternet(req)) {
+        if (chemin === '/scene') {
+          res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+          return res.end('Introuvable');
+        }
+        if (chemin === '/api/etat' || chemin === '/api/flux' || chemin === '/api/qr.svg') {
+          const verdict = jugerLeCode(req, url.searchParams.get('code'));
+          if (verdict !== 'ok') return refusDeCode(res, verdict);
+        }
+      }
+
       if (chemin === '/api/flux' && req.method === 'GET') return ouvrirFlux(req, res);
       if (chemin === '/api/etat' && req.method === 'GET') {
         return json(res, 200, {
