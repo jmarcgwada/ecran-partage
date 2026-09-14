@@ -1,17 +1,18 @@
 # ============================================================================
 # ECRAN PARTAGE
 #
-#   http://<nas>:8802/scene         a ouvrir en plein ecran dans la salle
+#   /scene?jeton=...                a ouvrir en plein ecran dans la salle —
+#                                   l'adresse complete est dans le journal
 #   http://<nas>:8802/salle/<code>  ou menent les QR codes
 #
 # Le cahier voulait ce service hors d'Internet (§9.3). Il y est desormais, par
 # choix : les telephones en 4G doivent pouvoir rejoindre la reunion. Ce qui le
-# rend possible, c'est la PORTE PUBLIQUE (src/acces.js) — depuis Internet rien
-# ne se lit sans le code de salle, et les codes faux sont limites. Voir le README.
+# rend possible, c'est la PORTE (src/acces.js) — d'ou que l'on vienne, rien ne se
+# lit sans le code de salle, et les codes faux sont limites. Voir le README.
 #
-# L'ecran de la salle n'a pas de code a presenter. Sur le reseau local il
-# s'ouvre tel quel ; par l'adresse publique il presente un JETON — voir le
-# README. Sans jeton, /scene explique ce qui manque et n'ouvre rien.
+# L'ecran de la salle n'a pas de code a presenter : il presente un JETON, en
+# local comme par Internet — voir le README. Sans jeton, /scene explique ce
+# qui manque et n'ouvre rien.
 # ============================================================================
 
 services:

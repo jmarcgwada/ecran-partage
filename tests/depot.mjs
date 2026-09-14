@@ -49,6 +49,19 @@ await new Promise((resoudre) => serveur.listen(0, '127.0.0.1', resoudre));
 const port = serveur.address().port;
 const base = `http://127.0.0.1:${port}`;
 
+// L'etat ne se lit plus sans code ni jeton, meme en local. Le banc lit donc,
+// comme l'ecran de la salle, avec le jeton : il reste valable d'une reunion a
+// l'autre, la ou le code change.
+const acces = await import('../src/acces.js');
+const { reglages: reglagesBanc } = await import('../src/config.js');
+const JETON = acces.jetonEcran();
+const avecJeton = (chemin) => chemin + (chemin.includes('?') ? '&' : '?') + 'jeton=' + encodeURIComponent(JETON);
+
+// Le banc essaie volontairement des dizaines de codes faux, tous depuis la meme
+// adresse : la limite est levee ici, et remise a sa vraie valeur dans la
+// section qui l'eprouve.
+reglagesBanc.codesFauxMax = 1_000_000;
+
 // --- Deux outils ------------------------------------------------------------
 
 // Un PDF, fabrique ici avec de vraies positions dans la table d'index : un PDF
@@ -92,7 +105,7 @@ function ecouterLeFlux() {
   let attente = null;
   let tampon = '';
 
-  const requete = http.get(`${base}/api/flux`, (reponse) => {
+  const requete = http.get(base + avecJeton('/api/flux'), (reponse) => {
     reponse.setEncoding('utf8');
     reponse.on('data', (morceau) => {
       tampon += morceau;
@@ -274,7 +287,7 @@ if (!outils) {
   // La page demandee est retenue, et bornee : une page 99 sur un document
   // d'une page ne doit pas laisser l'ecran sans image.
   await afficherAvec(code, identifiant, 99);
-  const borne = await fetch(`${base}/api/etat`).then((r) => r.json());
+  const borne = await fetch(base + avecJeton('/api/etat')).then((r) => r.json());
   verifier('une page hors des limites est ramenée dans le document',
     borne.affichage.page === borne.affichage.nbPages - 1 && !!borne.affichage.image,
     `page ${borne.affichage.page} sur ${borne.affichage.nbPages}`);
@@ -307,7 +320,7 @@ if (!outils) {
     pret !== null && pret.documents.find((d) => d.id === idTrois).nbPages === 3);
 
   await afficherAvec(code, idTrois, 0);
-  const page = async () => (await fetch(`${base}/api/etat`).then((r) => r.json())).affichage;
+  const page = async () => (await fetch(base + avecJeton('/api/etat')).then((r) => r.json())).affichage;
 
   verifier('la page suivante avance d’une page',
     (await tourner(code, 1).then((r) => r.json())).affichage.page === 1);
@@ -351,7 +364,7 @@ const poster = (chemin, corps, codeUtilise = code) =>
     body: JSON.stringify(corps),
   });
 
-const etatDe = () => fetch(`${base}/api/etat`).then((r) => r.json());
+const etatDe = () => fetch(base + avecJeton('/api/etat')).then((r) => r.json());
 
 verifier('on ne rejoint pas la salle sans le bon code',
   (await poster('/api/rejoindre', {}, codeFaux)).status === 403);
@@ -539,8 +552,8 @@ verifier('et de la mise en pause',
 // Une video trop grosse n'est pas jugee a l'aune d'un document : deux natures,
 // deux limites.
 verifier('la limite d’une vidéo n’est pas celle d’un document',
-  (await fetch(`${base}/api/etat`).then((r) => r.json())).limites.tailleMaxVideoMo
-  > (await fetch(`${base}/api/etat`).then((r) => r.json())).limites.tailleMaxMo);
+  (await fetch(base + avecJeton('/api/etat')).then((r) => r.json())).limites.tailleMaxVideoMo
+  > (await fetch(base + avecJeton('/api/etat')).then((r) => r.json())).limites.tailleMaxMo);
 
 // --- Le confort de l'écran --------------------------------------------------
 
@@ -586,7 +599,7 @@ salleModule.salle.derniereActivite = Date.now();
 
 // --- Ce qui ne doit pas sortir ---------------------------------------------
 
-const etat = await fetch(`${base}/api/etat`).then((r) => r.json());
+const etat = await fetch(base + avecJeton('/api/etat')).then((r) => r.json());
 verifier('aucun chemin de disque dans l’état public',
   !/[A-Za-z]:\\|\/data\/|\/tmp\//.test(JSON.stringify(etat)), JSON.stringify(etat).slice(0, 120));
 
@@ -601,7 +614,8 @@ verifier('un fichier qui n’est pas une page est refusé',
 
 // --- Les pages du service ---------------------------------------------------
 
-verifier('la page de l’écran est servie', await brute('/scene') === 200);
+verifier('la page de l’écran est servie, avec son jeton', await brute(avecJeton('/scene')) === 200);
+verifier('sans son jeton, l’écran ne s’ouvre pas, même en local', await brute('/scene') === 403);
 // L'ancienne page, ouverte a quiconque avait le code, n'a plus lieu d'etre : un
 // reste accessible serait une porte derobee au role.
 verifier('l’ancienne page /animateur n’existe plus', await brute('/animateur') === 404);
@@ -725,11 +739,9 @@ await animer('/api/animation', { action: 'revendiquer' });
 // fetch interdit de choisir l'en-tete Host : c'est pourtant lui, et lui seul,
 // qui distingue la porte publique. D'ou ces requetes brutes.
 
-const { reglages: reglagesPorte } = await import('../src/config.js');
-const acces = await import('../src/acces.js');
 
 const PUBLIC = 'ecran.exemple.fr';
-reglagesPorte.adressePublique = 'https://' + PUBLIC;
+reglagesBanc.adressePublique = 'https://' + PUBLIC;
 acces.toutOublier();
 
 const porte = (chemin, { hote = PUBLIC, xff = '203.0.113.7', methode = 'GET' } = {}) =>
@@ -755,11 +767,19 @@ const porte = (chemin, { hote = PUBLIC, xff = '203.0.113.7', methode = 'GET' } =
 const codeActuel = salleModule.salle.code;
 const fauxCode = String((Number(codeActuel) + 1) % 10000).padStart(4, '0');
 
-// Le reseau de la salle, d'abord : rien n'y change, l'ecran doit continuer de
-// lire l'etat sans rien prouver.
-const local = await porte('/api/etat', { hote: '192.0.2.10:8802', xff: '' });
-verifier('sur le réseau de la salle, l’état se lit toujours sans code',
-  local.statut === 200 && local.corps.includes(codeActuel));
+// Le reseau local, d'abord : il ne lit PLUS rien sans code. Tant qu'il le
+// pouvait, n'importe quel appareil branche sur le Wi-Fi du magasin lisait les
+// documents d'une reunion en cours. L'ecran, lui, presente son jeton.
+const LOCAL = { hote: '192.0.2.10:8802', xff: '' };
+const local = await porte('/api/etat', LOCAL);
+verifier('sur le réseau local non plus, l’état ne se lit plus sans code',
+  local.statut === 403 && !local.corps.includes(codeActuel), String(local.statut));
+verifier('ni le flux, ni le QR code, ni l’écran',
+  (await porte('/api/flux', LOCAL)).statut === 403
+  && (await porte('/api/qr.svg', LOCAL)).statut === 403
+  && (await porte('/scene', LOCAL)).statut === 403);
+verifier('mais avec le code, un téléphone lit l’état en local',
+  (await porte('/api/etat?code=' + codeActuel, LOCAL)).statut === 200);
 
 // Puis Internet.
 const sansCode = await porte('/api/etat');
@@ -793,8 +813,9 @@ verifier('la page du téléphone reste servie depuis Internet',
 
 // --- La limite des codes faux ---
 
+reglagesBanc.codesFauxMax = 10;
 acces.toutOublier();
-for (let i = 0; i < reglagesPorte.codesFauxMax; i += 1) await porte('/api/etat?code=' + fauxCode);
+for (let i = 0; i < reglagesBanc.codesFauxMax; i += 1) await porte('/api/etat?code=' + fauxCode);
 
 const bloque = await porte('/api/etat?code=' + fauxCode);
 verifier('après trop de codes faux, l’adresse est mise en attente', bloque.statut === 429, String(bloque.statut));
@@ -858,7 +879,7 @@ verifier('avec le bon jeton, le QR code n’est plus refusé',
 // Le jeton ne doit sortir NULLE PART : ni par la porte locale, ni par l'etat qu'il
 // ouvre lui-meme. S'il fuyait, n'importe quel participant l'emporterait, et avec
 // lui l'acces a toutes les reunions a venir.
-const etatLocal = await porte('/api/etat', { hote: '192.0.2.10:8802', xff: '' });
+const etatLocal = await porte(avecJeton('/api/etat'), { hote: '192.0.2.10:8802', xff: '' });
 verifier('le jeton n’apparaît jamais dans l’état',
   !etatLocal.corps.includes(jeton) && !etatEcran.corps.includes(jeton));
 
@@ -867,7 +888,7 @@ verifier('un jeton faux est refusé, sans rien laisser passer',
   fauxJeton.statut === 403 && !fauxJeton.corps.includes(codeActuel), String(fauxJeton.statut));
 
 // Un ecran reste sur un ancien jeton ne doit pas faire bloquer toute la salle.
-for (let i = 0; i < reglagesPorte.codesFauxMax + 5; i += 1) {
+for (let i = 0; i < reglagesBanc.codesFauxMax + 5; i += 1) {
   await porte('/api/etat?jeton=' + 'z'.repeat(43), { xff: '203.0.113.60' });
 }
 verifier('un jeton faux ne compte pas comme un code faux',
@@ -880,25 +901,33 @@ acces.oublierJetonEnMemoire();
 verifier('le jeton est enregistré, et survit à un redémarrage',
   surDisque === jeton && acces.jetonEcran() === jeton);
 
-// Le reseau local n'est jamais bloque : le tailnet arrivant par la boucle
-// locale, un doigt qui fourche y bloquerait tout le monde.
+// En local aussi, les codes faux comptent. Tous les acces directs y arrivent de
+// la MEME adresse — la passerelle de Docker, mesure faite sur le NAS — et
+// partagent donc une meme limite. C'est acceptable : les participants arrivent
+// par l'adresse publique, et l'ecran presente un jeton, qui passe outre.
 acces.toutOublier();
-for (let i = 0; i < reglagesPorte.codesFauxMax + 5; i += 1) {
-  await porte('/api/presence?code=' + fauxCode, { hote: '192.0.2.10:8802', xff: '', methode: 'POST' });
+for (let i = 0; i < reglagesBanc.codesFauxMax; i += 1) {
+  await porte('/api/presence?code=' + fauxCode, { ...LOCAL, methode: 'POST' });
 }
-verifier('les codes faux du réseau local ne bloquent personne',
-  (await porte('/api/etat', { hote: '192.0.2.10:8802', xff: '' })).statut === 200);
+verifier('en local aussi, trop de codes faux mettent en attente',
+  (await porte('/api/etat?code=' + codeActuel, LOCAL)).statut === 429);
+verifier('et l’écran, avec son jeton, s’ouvre quand même',
+  (await porte(avecJeton('/api/etat'), LOCAL)).statut === 200
+  && (await porte(avecJeton('/scene'), LOCAL)).statut === 200);
 
-// Sans adresse publique declaree, on ne sait pas distinguer : tout passage par
-// un proxy est tenu pour venu du dehors. C'est le choix prudent.
-reglagesPorte.adressePublique = '';
-verifier('sans adresse publique, tout proxy est traité comme Internet',
-  (await porte('/api/etat', { hote: 'peu.importe', xff: '203.0.113.9' })).statut === 403);
-verifier('sans adresse publique, un accès direct reste local',
-  (await porte('/api/etat', { hote: 'peu.importe', xff: '' })).statut === 200);
-
-// On rend le banc a son etat : pas d'adresse publique, table des essais vide.
+// L'adresse publique ne sert plus qu'au QR code : sans elle, la porte est
+// exactement aussi fermee.
+reglagesBanc.adressePublique = '';
+// Table vide d'abord : le controle precedent vient de bloquer l'adresse locale,
+// et l'on recevrait « en attente » la ou l'on veut constater « code incorrect ».
 acces.toutOublier();
+verifier('sans adresse publique, rien ne se lit davantage sans code',
+  (await porte('/api/etat', { hote: 'peu.importe', xff: '' })).statut === 403);
+
+// On rend le banc a son etat : pas d'adresse publique, table des essais vide,
+// limite levee pour la suite.
+acces.toutOublier();
+reglagesBanc.codesFauxMax = 1_000_000;
 
 // --- La fin de reunion ------------------------------------------------------
 //

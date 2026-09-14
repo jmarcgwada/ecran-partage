@@ -35,7 +35,9 @@ const serveur = http.createServer(creerGestionnaire());
 
 serveur.listen(port, () => {
   console.log(`[http] Écran Partagé sur le port ${port}`);
-  console.log(`[http]   l'écran de la salle : http://localhost:${port}/scene`);
+  // L'adresse de l'ecran porte son jeton : sans lui, rien ne s'affiche. Le journal
+  // du conteneur est le SEUL endroit ou il se lit — jamais sur un telephone.
+  console.log(`[http]   l'écran de la salle : http://localhost:${port}/scene?jeton=${jetonEcran()}`);
   console.log(`[http]   code de salle       : ${code}`);
   if (!reglages.adressePublique) {
     console.log("[http]   adresse publique non réglée : le QR code encodera l'adresse par laquelle l'écran a ouvert la page");

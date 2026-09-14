@@ -189,7 +189,7 @@ navigateur** et non un protocole de diffusion (§3.1), les documents deviennent
 
 | Adresse | Pour qui |
 | --- | --- |
-| `/scene` | l'écran de la salle, à ouvrir en plein écran une fois pour toutes |
+| `/scene?jeton=…` | l'écran de la salle, à ouvrir en plein écran une fois pour toutes — **avec son jeton** |
 | `/salle/<code>` | les participants — c'est là que mène le QR code |
 | `/` | celui qui installe l'écran : un lien vers `/scene`, rien d'autre |
 | `/api/etat` | l'état public, pour déboguer d'un coup de `curl` |
@@ -210,7 +210,8 @@ navigateur** et non un protocole de diffusion (§3.1), les documents deviennent
 node server.js
 ```
 
-Le code de salle s'affiche au démarrage. Ouvrez `http://localhost:8802/scene`.
+L'adresse de l'écran, jeton compris, s'affiche au démarrage : ouvrez-la telle
+quelle. Sans le jeton, l'écran explique ce qui manque et n'ouvre rien.
 
 **Sur Windows, la conversion ne marchera pas** : LibreOffice, poppler et
 `qrencode` ne sont pas dans le PATH. C'est normal et sans gravité — le QR code
@@ -228,7 +229,8 @@ dans la liste. La conversion s'éprouve dans le conteneur (voir plus bas).
 docker compose up -d --build
 ```
 
-Puis, sur l'écran de la salle, ouvrir `http://<nas>:8802/scene` en plein écran.
+Puis, sur l'écran de la salle, ouvrir en plein écran l'adresse **avec son jeton**
+que donne le journal du conteneur.
 
 ### Sur Internet
 
@@ -246,8 +248,8 @@ des téléphones en 4G rejoignent la réunion — à condition de passer par le
 
 #### L'écran de la salle, par l'adresse publique
 
-Sur le réseau local, l'écran s'ouvre sans rien présenter. Par l'adresse publique,
-il présente un **jeton d'écran** :
+L'écran n'a pas de code à présenter : c'est lui qui l'affiche. Il présente donc
+un **jeton d'écran**, en local comme par Internet :
 
 ```
 https://<adresse publique>/scene?jeton=<jeton>
@@ -279,23 +281,21 @@ que l'adresse publique est réglée — et **nulle part ailleurs** :
 Il ferme **les gestes** : déposer un document, en remettre un à l'écran, tourner
 les pages, et tout ce que fait l'animateur. Sans lui, on ne fait rien.
 
-**Sur le réseau de la salle, il ne ferme pas la lecture.** `/api/etat` y répond
-sans code, et il contient le code — il le faut bien, puisque l'écran de la salle
-doit l'afficher en grand sans avoir rien à prouver. Sur ce réseau, la frontière
-est le réseau lui-même (§9.3).
+**Il ferme aussi la lecture, d'où que l'on vienne.** Ce n'était pas le cas au
+départ, et c'était une fuite sur deux fronts : depuis Internet, l'état donnait à
+n'importe qui le code, la liste des documents et l'adresse de leurs pages ; sur
+le réseau local, la même lecture restait ouverte, parce que l'écran n'avait rien
+à présenter — n'importe quel appareil branché sur le Wi-Fi du magasin lisait les
+documents d'une réunion en cours. Depuis que l'écran a un jeton, plus aucune
+exception. La porte (`src/acces.js`) :
 
-**Depuis Internet, il ferme tout — lecture comprise.** Ce n'était pas le cas au
-départ, et c'était une fuite sérieuse : l'état donnait à n'importe qui le code,
-la liste des documents et l'adresse de leurs pages, qui se téléchargeaient
-ensuite sans code. La porte publique (`src/acces.js`) :
-
-- se reconnaît au **nom d'hôte** demandé, et non à l'adresse de la prise —
-  derrière le proxy tout semble venir du NAS ;
 - refuse l'état, le flux et le QR code sans le code (le QR code *encode* le
   code) ; n'ouvre l'écran de la salle qu'avec son jeton, et dit sinon ce qui
   manque ;
 - limite les codes faux : dix par adresse en dix minutes, puis attente — et
-  une adresse bloquée n'apprend plus rien, même en visant juste ;
+  une adresse bloquée n'apprend plus rien, même en visant juste. **En local
+  aussi**, où tous les accès directs arrivent de la même adresse (la passerelle
+  de Docker, mesuré) et partagent donc une même limite ;
 - identifie le client par la **dernière** entrée de `X-Forwarded-For`, celle
   qu'ajoute le proxy. Vérifié à travers le vrai proxy de DSM : un en-tête
   inventé ne débloque rien.
@@ -307,6 +307,26 @@ le code, lui, change à chaque réunion.
 Même remarque pour l'identifiant de participant : il est tiré au sort par le
 téléphone et voyage en clair. Il empêche les gestes involontaires, pas un
 participant décidé à reprendre la main.
+
+### Ne publier le port que sur la boucle locale
+
+Une limite que le code ne peut pas fermer seul : **un appareil qui atteint
+directement le port du service** (le Wi-Fi du magasin, par exemple) peut écrire
+lui-même un `X-Forwarded-For`, s'inventer une adresse à chaque essai et deviner
+le code en une minute. Aucune marque du proxy n'est infalsifiable.
+
+La parade : ne publier le port que sur la boucle locale du NAS
+(`127.0.0.1:8802:8802`), pour que **tout passe obligatoirement par DSM**, dont
+l'en-tête fait foi. Dans cet ordre, pour ne jamais couper le service :
+
+1. dans DSM, changer la destination du proxy inverse pour `http://127.0.0.1:8802`
+   (cela fonctionne tout de suite, la boucle locale étant déjà incluse) ;
+2. vérifier que l'adresse publique répond toujours ;
+3. seulement alors, publier le port sur `127.0.0.1` dans le compose.
+
+Ce que cela coûte : l'écran du magasin passe lui aussi par l'adresse publique,
+et dépend donc d'Internet — comme les téléphones, dont le QR code encode déjà
+cette adresse.
 
 Si un jour cela ne suffit plus, il ne faudra pas durcir le code de salle mais
 changer de conception : des comptes, ou un jeton par participant.

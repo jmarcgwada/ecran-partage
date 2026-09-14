@@ -11,9 +11,9 @@
 //   - le TOUR DE PAROLE ferme le pilotage de l'ecran, quand l'animateur le veut ;
 //   - le ROLE D'ANIMATEUR ferme l'administration.
 //
-// Lire l'etat reste ouvert SUR LE RESEAU LOCAL : l'ecran de la salle n'a aucun
-// moyen de garder un secret. Depuis Internet, l'etat ne se lit plus sans le code
-// — voir la porte publique dans l'aiguillage, et acces.js.
+// Et LIRE l'etat de la reunion exige le code — ou, pour l'ecran de la salle, son
+// jeton — d'ou que l'on vienne, reseau local compris. Voir la porte dans
+// l'aiguillage, et acces.js.
 // ============================================================================
 
 import fs from 'node:fs';
@@ -40,7 +40,7 @@ import {
 } from './salle.js';
 import { ouvrirFlux } from './flux.js';
 import {
-  vientDeInternet, adresseDuClient, etatDesEssais, noterEchec, jetonJuste,
+  adresseDuClient, etatDesEssais, noterEchec, jetonJuste,
 } from './acces.js';
 
 const executer = promisify(execFile);
@@ -169,13 +169,12 @@ function servirVideo(req, res, chemin) {
 // sur le seul depot laisserait essayer les dix mille codes par /api/etat, qui
 // dit si l'on a vise juste sans rien deposer.
 //
-// Rend 'ok', 'faux' ou { bloque: minutes }. La limite ne vaut que pour la porte
-// publique : sur le reseau de la salle, l'etat se lit de toute facon sans code,
-// et le tailnet arrivant ici par la boucle locale, tous ses appareils
-// partageraient une meme adresse — un doigt qui fourche bloquerait les autres.
+// Rend 'ok', 'faux' ou { bloque: minutes }. La limite vaut PARTOUT, reseau local
+// compris : une fois la lecture fermee en local, deviner le code sur le Wi-Fi du
+// magasin serait devenu la voie la plus courte vers les documents. Les acces
+// directs y partagent une meme adresse (voir acces.js) ; l'ecran, lui, presente
+// son jeton et n'est jamais freine.
 function jugerLeCode(req, propose) {
-  if (!vientDeInternet(req)) return codeJuste(propose) ? 'ok' : 'faux';
-
   const adresse = adresseDuClient(req);
   const essais = etatDesEssais(adresse);
   // Bloque AVANT de comparer : sinon le script continuerait d'apprendre, a
@@ -187,7 +186,7 @@ function jugerLeCode(req, propose) {
   return 'faux';
 }
 
-// L'ecran ouvert par l'adresse publique SANS son jeton, ou avec un jeton faux.
+// L'ecran ouvert SANS son jeton, ou avec un jeton faux.
 //
 // Un « Introuvable » muet laissait croire a une panne alors qu'il manquait
 // seulement la fin de l'adresse — recopiee a la main, elle se tronque vite. Ce
@@ -202,7 +201,7 @@ function pageSansJeton(res, jetonFaux) {
   const explication = jetonFaux
     ? 'Le jeton présent dans l’adresse n’est pas, ou plus, le bon. S’il a été '
       + 'changé, la nouvelle adresse de l’écran se trouve dans le journal du service, sur le NAS.'
-    : 'Par Internet, l’écran de la salle s’ouvre avec son adresse complète, qui se '
+    : 'L’écran de la salle s’ouvre avec son adresse complète, qui se '
       + 'termine par <code>?jeton=…</code>. Vérifiez que l’adresse n’a pas été coupée en la '
       + 'recopiant : tout ce qui suit <code>?jeton=</code> en fait partie. Elle se trouve '
       + 'dans le journal du service, sur le NAS.';
@@ -592,21 +591,22 @@ export function creerGestionnaire() {
     try {
       if (chemin === '/api/sante' && req.method === 'GET') return json(res, 200, { ok: true });
 
-      // --- La porte publique ---------------------------------------------
+      // --- La porte -------------------------------------------------------
       //
-      // Depuis Internet, l'etat de la reunion ne se lit pas sans le code. C'est
-      // LA fuite que ce bloc ferme : l'etat donnait le code, la liste des
-      // documents et l'adresse de leurs pages a n'importe qui. Le QR code aussi,
-      // puisqu'il encode l'adresse de la salle — donc le code.
+      // Rien de la reunion ne se lit sans le code de salle, D'OU QUE L'ON VIENNE.
+      // L'etat donnait le code, la liste des documents et l'adresse de leurs
+      // pages ; le QR code aussi, puisqu'il encode l'adresse de la salle — donc
+      // le code. Longtemps le reseau local faisait exception, parce que l'ecran
+      // n'avait rien a presenter : n'importe quel appareil branche sur le Wi-Fi
+      // du magasin lisait alors les documents d'une reunion en cours.
       //
-      // L'ecran de la salle, lui, n'a pas de code a presenter — c'est lui qui
-      // l'affiche. Par la porte publique, il presente le JETON DE L'ECRAN (voir
-      // acces.js) ; sans ce jeton, /scene explique ce qui manque (403).
+      // L'ecran presente desormais son JETON (voir acces.js), en local comme
+      // par Internet ; sans lui, /scene explique ce qui manque (403).
       //
       // Un jeton faux n'est ni compte comme un echec, ni juge ensuite comme un
       // code : il est simplement refuse. Le compter pourrait bloquer une salle
       // entiere a cause d'un ecran reste sur un ancien jeton.
-      if (vientDeInternet(req)) {
+      {
         const jetonPresente = url.searchParams.get('jeton');
         const ecran = jetonJuste(jetonPresente);
 

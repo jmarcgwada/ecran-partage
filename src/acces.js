@@ -1,17 +1,23 @@
 // ============================================================================
-// LA PORTE PUBLIQUE
+// LA PORTE
 //
-// Le service est joignable depuis Internet, par le proxy inverse de DSM. Ce
-// fichier repond a deux questions, et a elles seules :
+// Une seule porte, et elle est fermee d'ou que l'on vienne : rien de la reunion
+// ne se lit sans le code de salle — ou, pour l'ecran, sans son jeton.
 //
-//   - cette requete vient-elle d'Internet ?
+// Ce n'etait pas le cas au depart, et c'etait une fuite sur deux fronts :
+//
+//   - depuis Internet, l'etat de la reunion donnait LE CODE, LA LISTE DES
+//     DOCUMENTS et L'ADRESSE DE LEURS PAGES a n'importe qui ;
+//   - sur le reseau local, la meme lecture restait ouverte, parce que l'ecran de
+//     la salle n'avait rien a presenter. N'importe quel appareil branche sur le
+//     Wi-Fi du magasin lisait les documents d'une reunion en cours.
+//
+// Depuis que l'ecran a un jeton, plus aucune exception n'est necessaire.
+//
+// Ce fichier repond a trois questions, et a elles seules :
+//   - de quelle adresse vient cette requete ?
 //   - cette adresse a-t-elle deja trop essaye de codes faux ?
-//
-// Pourquoi il le faut. Tant que le service ne vivait que sur le reseau de la
-// salle, l'etat de la reunion etait lisible sans code : l'ecran doit l'afficher
-// sans rien prouver. Depuis Internet, ce meme etat donnait LE CODE, LA LISTE DES
-// DOCUMENTS et L'ADRESSE DE LEURS PAGES a n'importe qui. Depuis Internet, rien
-// ne se lit donc plus sans le code.
+//   - ce jeton est-il celui de l'ecran ?
 // ============================================================================
 
 import fs from 'node:fs';
@@ -20,41 +26,25 @@ import crypto from 'node:crypto';
 
 import { reglages, dossierDonnees } from './config.js';
 
-// La requete arrive-t-elle par la porte PUBLIQUE ?
-//
-// Ce qui la distingue, c'est le NOM D'HOTE demande — pas l'adresse de la prise.
-// Derriere le proxy inverse, toute requete semble venir du NAS lui-meme ; et sur
-// ce NAS, Tailscale relaie meme le tailnet vers la boucle locale. L'adresse de
-// la prise ne dit donc rien.
-//
-// Le nom d'hote, lui, est fiable : DSM aiguille ses regles de proxy d'apres ce
-// nom, une requete venue d'Internet ne peut pas nous atteindre en en annoncant un
-// autre — elle ne serait pas routee jusqu'ici.
-export function vientDeInternet(req) {
-  const hote = String(req.headers.host || '').toLowerCase();
-
-  if (reglages.adressePublique) {
-    try {
-      return hote === new URL(reglages.adressePublique).host.toLowerCase();
-    } catch {
-      // Adresse publique illisible : on retombe sur la regle prudente ci-dessous.
-    }
-  }
-
-  // Aucune adresse publique declaree : on ne sait pas distinguer. On tient alors
-  // tout passage par un proxy pour venu du dehors — c'est le choix prudent.
-  return Boolean(req.headers['x-forwarded-for'] || req.headers['x-real-ip']);
-}
-
 // L'adresse du client, pour compter ses essais.
 //
-// La DERNIERE entree de X-Forwarded-For, et non la premiere. Le proxy AJOUTE
-// l'adresse qu'il voit a la fin de l'en-tete ; tout ce qui precede, c'est le
-// client qui l'a ecrit. Prendre la premiere laisserait un attaquant s'inventer
-// une adresse neuve a chaque essai, et la limite ne limiterait plus rien.
+// La DERNIERE entree de X-Forwarded-For, et non la premiere. Le proxy inverse de
+// DSM AJOUTE l'adresse qu'il voit a la fin de l'en-tete ; tout ce qui precede,
+// c'est le client qui l'a ecrit. Prendre la premiere laisserait un attaquant
+// s'inventer une adresse neuve a chaque essai. Verifie a travers le vrai proxy.
 //
-// Si le proxy REMPLACE l'en-tete au lieu de le completer, il n'y a qu'une
-// entree : la derniere reste la bonne. Ce choix tient donc dans les deux cas.
+// Sans cet en-tete, l'adresse de la prise — et ici elle ne distingue personne :
+// mesure faite sur le NAS, le conteneur voit TOUTES les connexions directes
+// arriver de la passerelle de Docker (172.17.0.1), qu'elles viennent du reseau
+// local, du tailnet ou du NAS lui-meme. Les acces directs partagent donc une
+// meme limite. C'est acceptable : les participants arrivent par l'adresse
+// publique, et l'ecran presente un jeton, qui passe outre.
+//
+// LIMITE CONNUE, que le code ne peut pas fermer seul : un appareil qui atteint
+// directement le port du service peut ecrire lui-meme un X-Forwarded-For, et
+// s'inventer une adresse a chaque essai. Aucune marque du proxy n'est
+// infalsifiable. La parade est ailleurs : ne publier le port que sur la boucle
+// locale du NAS, pour que tout passe obligatoirement par DSM. Voir le README.
 export function adresseDuClient(req) {
   const transmise = String(req.headers['x-forwarded-for'] || '');
   const entrees = transmise.split(',').map((e) => e.trim()).filter(Boolean);
@@ -67,8 +57,8 @@ export function adresseDuClient(req) {
 // --- La limite des codes faux -------------------------------------------------
 //
 // Un code de quatre chiffres, c'est dix mille possibilites : un script les
-// essaie toutes en quelques minutes. Au-dela d'un certain nombre d'echecs, une
-// adresse attend.
+// essaie toutes en quelques minutes par Internet, en une minute sur un reseau
+// local. Au-dela d'un certain nombre d'echecs, une adresse attend.
 //
 // On compte les ECHECS, pas les essais : un participant qui tape juste n'est
 // jamais freine. Rien n'est ecrit sur le disque — une adresse IP est une donnee
@@ -122,10 +112,8 @@ export function toutOublier() {
 
 // --- Le jeton de l'ecran ------------------------------------------------------
 //
-// L'ecran de la salle n'a pas de code a presenter : c'est lui qui l'AFFICHE. Tant
-// qu'il s'ouvrait sur le reseau local, il n'en avait pas besoin. Quand la salle
-// de reunion est ailleurs, il doit passer par la porte publique — et presenter
-// quelque chose. C'est ce jeton, dans l'adresse de l'ecran :
+// L'ecran de la salle n'a pas de code a presenter : c'est lui qui l'AFFICHE. Il
+// presente donc un jeton, dans son adresse, en local comme par Internet :
 //
 //   https://<adresse publique>/scene?jeton=...
 //
@@ -143,11 +131,11 @@ export function toutOublier() {
 //     a qui administre le NAS.
 //
 //   - HORS DE LA LIMITE DES CODES FAUX. Un jeton valide passe meme quand
-//     l'adresse est bloquee : dans une salle, l'ecran et les telephones sortent
-//     souvent par la meme adresse Internet, et dix fautes de frappe d'un
-//     participant eteindraient l'ecran en pleine reunion. Aucun risque a cela :
-//     256 bits ne se devinent pas, contrairement a quatre chiffres. Pour la meme
-//     raison, un jeton faux n'est pas compte comme un echec.
+//     l'adresse est bloquee : l'ecran et les telephones d'une salle partagent
+//     souvent une meme adresse, et dix fautes de frappe d'un participant
+//     eteindraient l'ecran en pleine reunion. Aucun risque a cela : 256 bits ne
+//     se devinent pas, contrairement a quatre chiffres. Pour la meme raison, un
+//     jeton faux n'est pas compte comme un echec.
 
 const fichierJeton = () => path.join(dossierDonnees, 'jeton-ecran');
 let jetonEnMemoire = null;
